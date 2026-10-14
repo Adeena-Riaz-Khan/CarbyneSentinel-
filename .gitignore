@@ -1,0 +1,45 @@
+# Docs, advisor PDFs, LaTeX sources
+docs/
+*.pdf
+*.docx
+*.tex
+main.tex
+
+# Personal / private notes (not team README)
+NOTES.md
+**/NOTES.md
+*.personal.md
+*_personal.md
+CarbyneSentinel_Final_Master_Roadmap.md.pdf
+
+
+Raw/
+temp_dive/
+DIVE_Labels/
+DIVE_Preprocessed_Data/
+EDA_and_Profiling_Reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Cursor local (optional; keep rules if you want them shared)
+.cursor/
+
+# Logs / temp
+*.log
+temp/
+tmp/

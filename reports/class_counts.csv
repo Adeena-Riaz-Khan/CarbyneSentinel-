@@ -1,0 +1,14 @@
+vulnerability_class,record_count,percentage,imbalance
+AccessControl,17416,29.59,Majority Class
+OtherVulnerability,12891,21.9,Majority Class
+Reentrancy,11727,19.92,Majority Class
+Arithmetic,9939,16.89,Majority Class
+UncheckedReturn,6188,10.51,Moderate Class
+Flashloan,418,0.71,Minority Class (Needs Augmentation)
+OracleManipulation,106,0.18,Minority Class (Needs Augmentation)
+TimeManipulation,55,0.09,Minority Class (Needs Augmentation)
+FrontRunning,54,0.09,Minority Class (Needs Augmentation)
+TxOrigin,50,0.08,Minority Class (Needs Augmentation)
+BadRandomness,8,0.01,Minority Class (Needs Augmentation)
+DenialOfService,6,0.01,Minority Class (Needs Augmentation)
+ShortAddress,1,0.0,Minority Class (Needs Augmentation)

@@ -1,0 +1,83 @@
+{
+  "contract_id": "string - unique ID, e.g. SOURCE_originalname_0001",
+  "source_dataset": "string - one of: solidifi, smartbugs, dapscan, defihacklabs, dive, slither_hf",
+  "source_code_path": "string - relative path to the .sol file in processed/",
+  "bytecode_path": "string - relative path to compiled bytecode, if compiled; null if not compiled",
+  "label": "string - one of: vulnerable, benign",
+
+  "vulnerability_types": "array of strings - all applicable types from the vocabulary below; empty array only if label is benign",
+  "primary_vulnerability_type": "string - single primary type for stratified splits / simple classifiers; one of the vocabulary values, or 'none' if benign",
+
+  "compiler_version": "string - e.g. 0.8.19, or 'unknown' if not determinable",
+  "compiled_successfully": "boolean",
+  "duplicate_of": "string or null - contract_id of an identical/near-identical contract if found",
+  "notes": "string - anything unusual about this entry",
+
+  "parent_contract_id": "string or null - the original, pre-transformation contract_id this entry was derived from. Null for original/seed contracts; set for any augmented/obfuscated variant.",
+  "transformation_level": "string - one of: lexical, structural, control_flow, data_flow, contract_level, none. 'none' for original/seed contracts.",
+  "transformation_techniques": "array of strings - specific techniques applied, e.g. ['dead_code_insertion', 'opaque_predicate']. Empty array for original/seed contracts.",
+  "obfuscation_severity": "string - one of: light, moderate, aggressive, none. 'none' for original/seed contracts.",
+  "exploit_verified_after_transform": "boolean or null - whether the original exploit/vulnerability was confirmed (e.g. via fork-replay) to still hold after transformation. Null for original/seed contracts or benign entries where this does not apply.",
+
+  "vulnerability_vocabulary": [
+    "reentrancy",
+    "integer_overflow",
+    "access_control",
+    "unchecked_call",
+    "time_manipulation",
+    "front_running",
+    "bad_randomness",
+    "denial_of_service",
+    "short_address",
+    "tx_origin",
+    "other",
+    "none"
+  ],
+
+  "vulnerability_class_id_map": {
+    "reentrancy": 0,
+    "integer_overflow": 1,
+    "access_control": 2,
+    "unchecked_call": 3,
+    "time_manipulation": 4,
+    "front_running": 5,
+    "bad_randomness": 6,
+    "denial_of_service": 7,
+    "short_address": 8,
+    "tx_origin": 9,
+    "other": 10,
+    "none": 11
+  },
+
+  "transformation_level_vocabulary": [
+    "lexical",
+    "structural",
+    "control_flow",
+    "data_flow",
+    "contract_level",
+    "none"
+  ],
+
+  "obfuscation_severity_vocabulary": [
+    "light",
+    "moderate",
+    "aggressive",
+    "none"
+  ],
+
+  "gnn_fields": {
+    "vulnerable_function_name": "string or null - name of the function containing the bug, if determinable",
+    "vulnerable_line_numbers": "array of ints or null - source line(s) where the bug lives, if determinable from the source dataset's own annotations (SolidiFI/SmartBugs provide this; DAppSCAN/DeFiHackLabs may not)",
+    "vulnerability_class_id": "int - numeric encoding of primary_vulnerability_type via vulnerability_class_id_map"
+  },
+
+  "llm_fields": {
+    "vulnerable_function_snippet": "string or null - just the relevant function's code, not the whole contract, useful for shorter prompts",
+    "explanation": "string or null - a short natural-language reason WHY this is vulnerable; do not auto-generate with an LLM without explicit approval",
+    "severity": "string or null - low / medium / high / critical, if the source dataset or an audit report provides this"
+  },
+
+  "_removed": {
+    "vulnerability_type": "REPLACED by vulnerability_types (list) + primary_vulnerability_type. Do not use the old single-string field."
+  }
+}
