@@ -13,6 +13,10 @@ NOTES.md
 CarbyneSentinel_Final_Master_Roadmap.md.pdf
 
 
+data/processed/dive_vulnerable.jsonl
+data/processed/benign_pool/slither_benign.jsonl
+data/processed/benign_pool/dive_benign.jsonl
+
 Raw/
 temp_dive/
 DIVE_Labels/
