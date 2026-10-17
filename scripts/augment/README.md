@@ -18,11 +18,25 @@ python scripts/augment/run_wave_ab.py
 # Next waves (append-only; keeps A1+B1 rows)
 python scripts/augment/run_wave_a2_b3.py
 
+# Level 3 control-flow (C1+C2+C3, append-only)
+python scripts/augment/run_wave_c.py
+
+# Level 4-5 data-flow + contract-level (thin-class-first seeding)
+python scripts/augment/run_wave_de.py
+
+# Stacked 2/3-technique variants (append-only)
+python scripts/augment/stack_augment.py --target-ok 40 --max-per-stack 6
+python scripts/augment/stack_augment.py --classes time_manipulation,front_running,access_control --target-ok 45 --max-per-stack 5
+python scripts/augment/stack_augment.py --triples-only --classes time_manipulation,front_running,tx_origin --max-per-stack 4
+
 # Or one technique at a time
 python scripts/augment/comment_manipulation.py
 python scripts/augment/literal_format_rewrite.py
 python scripts/augment/independent_stmt_reorder.py --limit 15
 python scripts/augment/function_extraction.py --limit 15
+python scripts/augment/condition_rewriting.py
+python scripts/augment/opaque_predicate.py
+python scripts/augment/control_flow_flattening.py
 ```
 
 ## Outputs
@@ -38,4 +52,4 @@ python scripts/augment/function_extraction.py --limit 15
 
 Level 1 (`identifier_renaming`, `comment_manipulation`, `literal_format_rewrite`) = lexical / LLM track.  
 Level 2 (`dead_code_insertion`, `independent_stmt_reorder`, `function_extraction`) = structural / GCN+fingerprint track.  
-Do not start Level 3 until Level 1-2 review is accepted.
+Level 3 (`condition_rewriting`, `opaque_predicate`, `control_flow_flattening`) = control-flow / GCN hard stress.

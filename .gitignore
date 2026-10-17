@@ -12,6 +12,33 @@ NOTES.md
 *_personal.md
 CarbyneSentinel_Final_Master_Roadmap.md.pdf
 
+# Internal agent tracking (never commit)
+decisions.md
+flow.md
+
+# Advisor presentation materials (local only — do not push)
+presentation/
+docs/dataset/
+reports/figures/execution-pipeline-flow.png
+reports/figures/presentation_*
+data/processed/phase1_unique_seed_report.json
+data/processed/phase2_unique_seed_report.json
+data/processed/phase2_grow_candidates.jsonl
+data/processed/phase3_train_index.json
+data/processed/phase3_class_weights.json
+data/processed/phase4_splits.json
+data/processed/augment_wave_ab_review.md
+processed/master_dataset_phase2.json
+
+# Local PDF / PNG generators (not needed by members)
+scripts/generate_advisor_pdfs.py
+scripts/generate_implementation_plan_pdf.py
+scripts/generate_execution_flow_png.py
+scripts/generate_presentation_slides_png.py
+scripts/pdf_to_docx_implementation_plan.py
+scripts/generate_*_pdf.py
+scripts/generate_*_png.py
+
 
 data/processed/dive_vulnerable.jsonl
 data/processed/benign_pool/slither_benign.jsonl

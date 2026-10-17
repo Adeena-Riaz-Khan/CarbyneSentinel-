@@ -44,7 +44,7 @@ Custom obfuscation track (one technique per variant; same vuln label as parent):
 | `processed/bytecode/augmented/<technique>/` | Compiled bins when available |
 | `scripts/augment/` | Scripts to regenerate waves |
 
-Done so far: Level 1–2 (A1–A3, B1–B3). Level 3+ not started.
+Done so far: Level 1–5 singles (A–E) plus stacked 2-technique variants (`stack_augment.py`).
 
 ## Raw sources
 

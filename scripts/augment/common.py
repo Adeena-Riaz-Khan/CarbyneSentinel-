@@ -42,6 +42,53 @@ def pick_reentrancy_seeds(n: int=5) -> list[dict[str, Any]]:
     rows = [r for r in master if r.get('primary_vulnerability_type') == 'reentrancy' and r.get('compiled_successfully') and resolve_source_path(r).is_file()]
     return rows[:n]
 
+THIN_FIRST = ['short_address', 'denial_of_service', 'bad_randomness', 'tx_origin', 'time_manipulation', 'front_running', 'access_control']
+
+def pick_imbalance_seeds(extra_minority: int=20, reentrancy: int=5) -> list[dict[str, Any]]:
+    """All compile-ready thin-class seeds first, then more minority, then reentrancy."""
+    master = load_master()
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def _add(rows: list[dict[str, Any]]) -> None:
+        for r in rows:
+            cid = r['contract_id']
+            if cid in seen:
+                continue
+            if not r.get('compiled_successfully'):
+                continue
+            if not resolve_source_path(r).is_file():
+                continue
+            seen.add(cid)
+            out.append(r)
+
+    for cls in THIN_FIRST:
+        _add([r for r in master if r.get('primary_vulnerability_type') == cls])
+    _add(pick_minority_seeds({
+        'tx_origin': extra_minority,
+        'time_manipulation': extra_minority,
+        'front_running': extra_minority,
+        'bad_randomness': 20,
+        'denial_of_service': 20,
+        'short_address': 20,
+    }))
+    _add(pick_reentrancy_seeds(reentrancy))
+    return out
+
+def existing_parents_for_technique(technique: str) -> set[str]:
+    parents: set[str] = set()
+    if not OUT_JSONL.is_file():
+        return parents
+    with OUT_JSONL.open(encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            if technique in (r.get('transformation_techniques') or []):
+                parents.add(r.get('parent_contract_id') or '')
+    return parents
+
 def write_seed_manifest(seeds: list[dict[str, Any]], path: Path=SEED_MANIFEST) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     slim = []
@@ -108,8 +155,9 @@ def append_jsonl(path: Path, row: dict[str, Any]) -> None:
 def make_variant_id(parent_id: str, technique: str, idx: int=1) -> str:
     return f'{parent_id}__{technique}_v{idx}'
 
-def build_record(*, parent: dict[str, Any], technique: str, level: str, severity: str, variant_id: str, source_rel: str, bytecode_rel: Optional[str], compiler_version: str, compiled_ok: bool, exploit_verified: Optional[bool], notes: str) -> dict[str, Any]:
-    return {'contract_id': variant_id, 'source_dataset': parent.get('source_dataset'), 'source_code_path': source_rel, 'bytecode_path': bytecode_rel, 'label': 'vulnerable', 'vulnerability_types': list(parent.get('vulnerability_types') or []), 'primary_vulnerability_type': parent.get('primary_vulnerability_type'), 'compiler_version': compiler_version, 'compiled_successfully': compiled_ok, 'duplicate_of': None, 'notes': notes, 'parent_contract_id': parent.get('contract_id'), 'transformation_level': level, 'transformation_techniques': [technique], 'obfuscation_severity': severity, 'exploit_verified_after_transform': exploit_verified, 'gnn_fields': parent.get('gnn_fields'), 'llm_fields': parent.get('llm_fields')}
+def build_record(*, parent: dict[str, Any], technique: str, level: str, severity: str, variant_id: str, source_rel: str, bytecode_rel: Optional[str], compiler_version: str, compiled_ok: bool, exploit_verified: Optional[bool], notes: str, techniques: Optional[list[str]]=None) -> dict[str, Any]:
+    tech_list = list(techniques) if techniques else [technique]
+    return {'contract_id': variant_id, 'source_dataset': parent.get('source_dataset'), 'source_code_path': source_rel, 'bytecode_path': bytecode_rel, 'label': 'vulnerable', 'vulnerability_types': list(parent.get('vulnerability_types') or []), 'primary_vulnerability_type': parent.get('primary_vulnerability_type'), 'compiler_version': compiler_version, 'compiled_successfully': compiled_ok, 'duplicate_of': None, 'notes': notes, 'parent_contract_id': parent.get('contract_id'), 'transformation_level': level, 'transformation_techniques': tech_list, 'obfuscation_severity': severity, 'exploit_verified_after_transform': exploit_verified, 'gnn_fields': parent.get('gnn_fields'), 'llm_fields': parent.get('llm_fields')}
 
 def save_variant_artifacts(*, technique: str, variant_id: str, source_text: str, bytecode_hex: Optional[str]) -> tuple[str, Optional[str]]:
     src_dir = AUG_SOURCE_ROOT / technique
