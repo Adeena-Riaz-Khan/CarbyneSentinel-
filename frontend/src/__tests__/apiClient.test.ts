@@ -3,7 +3,6 @@ import { ApiError } from "../contracts/errors";
 import {
   __resetApiForTests,
   __setNetworkDown,
-  freezeAgent,
   getStats,
   getTransactions,
   patchSettings,
@@ -36,9 +35,11 @@ describe("apiClient authz + network (BR-NET-1, BR-PERM-1)", () => {
     expect(stats.avgLatencyMs).toBe(285);
   });
 
-  it("forbids viewer freeze", async () => {
+  it("forbids viewer settings write", async () => {
     await signIn({ email: "viewer@carbyne.security", password: "Viewer#Secure1!" });
-    await expect(freezeAgent("ag1", true)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      patchSettings({ timeoutMs: 400 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("surfaces network failure", async () => {

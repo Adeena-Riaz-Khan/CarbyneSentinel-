@@ -1,8 +1,6 @@
 import type {
-  Agent,
   BenchmarkDoc,
   GlobalStats,
-  InterceptAlert,
   SettingsDoc,
   Transaction,
 } from "../contracts/domain";
@@ -12,9 +10,7 @@ import { isFirestoreDataEnabled } from "../lib/firebaseApp";
 import { validateSettingsPatch } from "../validation/forms";
 import { can, getCurrentSession, requirePermission } from "./authService";
 import {
-  seedAgents,
   seedBenchmark,
-  seedIntercept,
   seedSettings,
   seedStats,
   seedTransactions,
@@ -24,8 +20,6 @@ import * as fs from "./firestoreRepo";
 type Memory = {
   stats: GlobalStats;
   transactions: Transaction[];
-  agents: Agent[];
-  intercept: InterceptAlert;
   settings: SettingsDoc;
   benchmarks: BenchmarkDoc;
 };
@@ -33,11 +27,6 @@ type Memory = {
 const memory: Memory = {
   stats: { ...seedStats, pendingTotal: PENDING_FEED_TOTAL },
   transactions: seedTransactions.map((t) => ({ ...t })),
-  agents: seedAgents.map((a) => ({
-    ...a,
-    recentTxs: a.recentTxs.map((t) => ({ ...t })),
-  })),
-  intercept: { ...seedIntercept },
   settings: { ...seedSettings },
   benchmarks: {
     ...seedBenchmark,
@@ -56,11 +45,6 @@ export function __resetApiForTests() {
   networkDown = false;
   memory.stats = { ...seedStats, pendingTotal: PENDING_FEED_TOTAL };
   memory.transactions = seedTransactions.map((t) => ({ ...t }));
-  memory.agents = seedAgents.map((a) => ({
-    ...a,
-    recentTxs: a.recentTxs.map((t) => ({ ...t })),
-  }));
-  memory.intercept = { ...seedIntercept };
   memory.settings = { ...seedSettings };
   memory.benchmarks = {
     ...seedBenchmark,
@@ -96,39 +80,6 @@ export async function getTransactions(signal?: AbortSignal): Promise<Transaction
   requirePermission("mempool:read");
   if (isFirestoreDataEnabled()) return fs.fsGetTransactions();
   return structuredClone(memory.transactions);
-}
-
-export async function getAgents(signal?: AbortSignal): Promise<Agent[]> {
-  await gate(signal);
-  assertAuth();
-  requirePermission("agents:read");
-  if (isFirestoreDataEnabled()) return fs.fsGetAgents();
-  return structuredClone(memory.agents);
-}
-
-export async function freezeAgent(
-  agentId: string,
-  frozen: boolean,
-  signal?: AbortSignal,
-): Promise<Agent[]> {
-  await gate(signal);
-  assertAuth();
-  requirePermission("agents:freeze");
-  if (isFirestoreDataEnabled()) return fs.fsFreezeAgent(agentId, frozen);
-  const found = memory.agents.some((a) => a.id === agentId);
-  if (!found) throw new ApiError("NOT_FOUND", "Agent not found.", 404);
-  memory.agents = memory.agents.map((a) =>
-    a.id === agentId ? { ...a, status: frozen ? "FROZEN" : "ACTIVE" } : a,
-  );
-  return structuredClone(memory.agents);
-}
-
-export async function getIntercept(signal?: AbortSignal): Promise<InterceptAlert | null> {
-  await gate(signal);
-  assertAuth();
-  requirePermission("agents:read");
-  if (isFirestoreDataEnabled()) return fs.fsGetIntercept();
-  return structuredClone(memory.intercept);
 }
 
 export async function getBenchmarks(signal?: AbortSignal): Promise<BenchmarkDoc> {

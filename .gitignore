@@ -16,6 +16,10 @@ CarbyneSentinel_Final_Master_Roadmap.md.pdf
 decisions.md
 flow.md
 
+processed/source/augmented/
+processed/source/phase2/
+processed/bytecode/augmented/
+
 # Advisor presentation materials (local only — do not push)
 presentation/
 docs/dataset/

@@ -20,9 +20,7 @@ import {
 import { PENDING_FEED_TOTAL } from "../src/contracts/grids";
 import { FS } from "../src/lib/collections";
 import {
-  seedAgents,
   seedBenchmark,
-  seedIntercept,
   seedSettings,
   seedStats,
   seedTransactions,
@@ -101,21 +99,22 @@ async function seedCollections() {
     pendingTotal: PENDING_FEED_TOTAL,
   });
   await setDoc(doc(db, FS.settings.col, FS.settings.doc), seedSettings);
-  await setDoc(doc(db, FS.benchmarks.col, FS.benchmarks.doc), seedBenchmark);
-  await setDoc(doc(db, FS.intercept.col, FS.intercept.doc), seedIntercept);
+  // Firestore forbids nested arrays — store matrix as rows of { cells: number[] }.
+  const { matrix, latencyStages, ...benchRest } = seedBenchmark;
+  await setDoc(doc(db, FS.benchmarks.col, FS.benchmarks.doc), {
+    ...benchRest,
+    matrixRows: matrix.map((cells) => ({ cells })),
+    latencyStages,
+  });
 
   const batch = writeBatch(db);
   for (const tx of seedTransactions) {
     const { id, ...rest } = tx;
     batch.set(doc(db, FS.transactions, id), rest);
   }
-  for (const ag of seedAgents) {
-    const { id, ...rest } = ag;
-    batch.set(doc(db, FS.agents, id), rest);
-  }
   await batch.commit();
-  console.log("  + stats/global, settings/pipeline, benchmarks/latest, alerts/intercept");
-  console.log(`  + ${seedTransactions.length} transactions, ${seedAgents.length} agents`);
+  console.log("  + stats/global, settings/pipeline, benchmarks/latest");
+  console.log(`  + ${seedTransactions.length} transactions`);
 }
 
 async function main() {

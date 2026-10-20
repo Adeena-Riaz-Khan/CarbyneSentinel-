@@ -14,10 +14,9 @@ import {
 import AuthPage from "./pages/AuthPage";
 import { sanitizeSearchQuery } from "./validation/forms";
 
-type Page = "monitor" | "agents" | "analytics" | "settings" | "auth";
+type Page = "monitor" | "analytics" | "settings" | "auth";
 type IconName =
   | "activity"
-  | "agent"
   | "analytics"
   | "settings"
   | "search"
@@ -36,7 +35,6 @@ type IconName =
 
 const paths: Record<IconName, ReactNode> = {
   activity: <><path d="M3 12h4l2.2-6 4 12 2.2-6H21" /></>,
-  agent: <><rect x="5" y="7" width="14" height="12" rx="3" /><path d="M9 7V5a3 3 0 0 1 6 0v2M9 13h.01M15 13h.01M9 16h6" /></>,
   analytics: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V3" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
@@ -81,7 +79,6 @@ function HeroAssetFrame() {
 
 const navItems: { id: Page; label: string; icon: IconName }[] = [
   { id: "monitor", label: "Mempool Monitor", icon: "activity" },
-  { id: "agents", label: "AgentGuard", icon: "agent" },
   { id: "analytics", label: "Analytics", icon: "analytics" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
@@ -347,119 +344,6 @@ function Inspector({ close }: { close: () => void }) {
         </footer>
       </section>
     </div>
-  );
-}
-
-function AgentGuard() {
-  const { agents, stats, intercept, toggleFreeze } = useData();
-  const fmt = (n: number) => `$${n.toLocaleString()}`;
-  return (
-    <>
-      <PageHeading eyebrow="AUTONOMOUS SECURITY LAYER" title="AgentGuard" copy="Policy enforcement for autonomous AI payment workflows.">
-        <button className="btn secondary"><Icon name="settings" size={15} />Global policies</button>
-        <button className="btn primary">Register agent <Icon name="arrow" size={15} /></button>
-      </PageHeading>
-      <div className="hero-banner">
-        <div>
-          <span className="hero-icon"><Icon name="agent" size={25} /></span>
-          <div className="eyebrow">AI-NATIVE PAYMENT DEFENSE</div>
-          <h2>Autonomous AI payment guardrails</h2>
-          <p>Every agent call is screened for prompt injection, recipient drift, and policy violations before it reaches the chain.</p>
-        </div>
-        <div className="radar"><span /><i /><b><Icon name="shield" size={25} /></b></div>
-      </div>
-      <div className="summary-grid">
-        {[
-          [String(stats?.activeAgents ?? "—"), "Active monitored agents", "All systems nominal"],
-          [String(stats?.interceptedCalls ?? "—"), "Intercepted injected calls", "Last 24 hours"],
-          [stats?.protectedVolume ?? "—", "Protected volume", `Across ${(stats?.totalCalls ?? 0).toLocaleString()} calls`],
-        ].map((x, i) => (
-          <article className="summary-card" key={x[1]}>
-            <span className={`summary-icon s${i}`}><Icon name={i === 0 ? "agent" : i === 1 ? "shield" : "activity"} /></span>
-            <div><b>{x[0]}</b><span>{x[1]}</span><small>{x[2]}</small></div>
-          </article>
-        ))}
-      </div>
-      <section className="agent-layout">
-        <div className="agent-list">
-          <div className="section-head">
-            <div><h2>Monitored agents</h2><p>Live policy status and spending utilization</p></div>
-            <span>{stats?.activeAgents ?? agents.length} agents · {agents.length} shown</span>
-          </div>
-          <div className="agent-grid">
-            {agents.map((a) => {
-              const pct = Math.round((a.spent / a.limit) * 100);
-              return (
-                <article className="agent-card" key={a.id}>
-                  <div className="agent-card-head">
-                    <span className={`agent-avatar ${a.color}`}>{a.initials}</span>
-                    <div><h3>{a.name} Agent</h3><p>{a.description}</p></div>
-                    <span className="status-badge"><i />{a.status}</span>
-                  </div>
-                  <div className="allowance">
-                    <div><span>Daily spending allowance</span><b>{fmt(a.spent)} <small>/ {fmt(a.limit)}</small></b></div>
-                    <div className="allowance-track"><i style={{ width: `${pct}%` }} /></div>
-                    <small>{100 - pct}% remaining · Resets in 08:42:19</small>
-                  </div>
-                  <div className="recent-label">RECENT TRANSACTIONS</div>
-                  {a.recentTxs.map((tx) => (
-                    <div className="agent-tx" key={tx.label}>
-                      <span className={tx.status === "Blocked" ? "tx-icon blocked" : "tx-icon"}>
-                        <Icon name={tx.status === "Blocked" ? "close" : "check"} size={12} />
-                      </span>
-                      <div><b>{tx.label}</b><small>{tx.ago} · Ethereum</small></div>
-                      <span><b>{tx.amount}</b><small className={tx.status === "Blocked" ? "danger-text" : "safe-text"}>{tx.status}</small></span>
-                    </div>
-                  ))}
-                  <div className="agent-controls">
-                    <label>
-                      <span>Spending ceiling</span>
-                      <div><input defaultValue={a.limit.toLocaleString()} /><small>USD / day</small></div>
-                    </label>
-                    <RequirePermission
-                      permission="agents:freeze"
-                      fallback={<span className="perm-hint">Freeze requires Security Admin</span>}
-                    >
-                      <button className="freeze-btn" onClick={() => void toggleFreeze(a.id)} type="button">
-                        <Icon name={a.status === "FROZEN" ? "play" : "lock"} size={15} />
-                        {a.status === "FROZEN" ? "Unfreeze agent" : "Emergency freeze"}
-                      </button>
-                    </RequirePermission>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-        {intercept && (
-          <aside className="intercept-alert">
-            <div className="alert-head">
-              <span><Icon name="alert" /></span>
-              <div>
-                <div className="eyebrow danger-text">INTERCEPTED CALL</div>
-                <h3>{intercept.title}</h3>
-                <p>{intercept.blockedAgo}</p>
-              </div>
-            </div>
-            <div className="alert-flow">
-              <div><span>Expected recipient</span><code>{intercept.expectedRecipient}</code></div>
-              <Icon name="arrow" />
-              <div><span>Actual recipient</span><code>{intercept.actualRecipient}</code></div>
-            </div>
-            <div className="alert-copy">
-              <b>Recipient drift identified</b>
-              <p>{intercept.explanation}</p>
-            </div>
-            <dl>
-              <div><dt>Agent</dt><dd>{intercept.agentName}</dd></div>
-              <div><dt>Attempted value</dt><dd>{intercept.attemptedValue}</dd></div>
-              <div><dt>Confidence</dt><dd>{intercept.confidence}%</dd></div>
-            </dl>
-            <button className="inspect-alert">Open incident report <Icon name="arrow" size={14} /></button>
-          </aside>
-        )}
-      </section>
-    </>
   );
 }
 
@@ -832,7 +716,6 @@ function AppShell() {
       <Header page={page} setPage={setPage} />
       <main className="content">
         {page === "monitor" && <Monitor openInspector={() => setInspector(true)} />}
-        {page === "agents" && <AgentGuard />}
         {page === "analytics" && <Analytics />}
         {page === "settings" && <Settings />}
       </main>

@@ -50,13 +50,13 @@ describe("authService (BR-AUTH-1..3)", () => {
     }
   });
 
-  it("viewer cannot freeze agents", async () => {
+  it("viewer cannot write settings", async () => {
     await bootstrapDemoUsers();
     await signIn({
       email: "viewer@carbyne.security",
       password: "Viewer#Secure1!",
     });
-    expect(can("agents:freeze")).toBe(false);
+    expect(can("settings:write")).toBe(false);
     expect(can("mempool:read")).toBe(true);
   });
 

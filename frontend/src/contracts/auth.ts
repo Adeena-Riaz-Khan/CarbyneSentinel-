@@ -4,8 +4,6 @@ export type Permission =
   | "console:access"
   | "mempool:read"
   | "mempool:simulate"
-  | "agents:read"
-  | "agents:freeze"
   | "analytics:read"
   | "analytics:export"
   | "settings:read"
@@ -38,8 +36,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "console:access",
     "mempool:read",
     "mempool:simulate",
-    "agents:read",
-    "agents:freeze",
     "analytics:read",
     "analytics:export",
     "settings:read",
@@ -51,7 +47,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "console:access",
     "mempool:read",
     "mempool:simulate",
-    "agents:read",
     "analytics:read",
     "analytics:export",
     "settings:read",
@@ -61,7 +56,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   viewer: [
     "console:access",
     "mempool:read",
-    "agents:read",
     "analytics:read",
     "diagnostics:read",
   ],

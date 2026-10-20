@@ -368,53 +368,6 @@ button:active{transform:translateY(1px)}
 .table-footer{height:48px;padding:0 22px;font-size:12px}
 .table-footer b{color:#ff8b4b}
 
-/* -- AgentGuard -- */
-.hero-banner{min-height:200px;padding:32px 36px;border-radius:18px}
-.hero-banner h2{font-size:28px;letter-spacing:-.6px}
-.hero-banner p{font-size:14px;line-height:1.55;color:#9ca3af;margin-top:10px;max-width:560px}
-.hero-icon{width:56px;height:56px;border-radius:14px}
-.summary-grid{gap:14px;margin:18px 0 8px}
-.summary-card{padding:18px 20px;gap:16px}
-.summary-icon{width:44px;height:44px;border-radius:12px}
-.summary-card b{font-size:24px}
-.summary-card span{font-size:13px;color:#a1a6b0;margin-top:2px}
-.summary-card small{font-size:12px;color:#6b7280;margin-top:4px}
-.section-head{margin:18px 2px 14px}
-.section-head h2{font-size:18px}
-.section-head p{font-size:13px;margin-top:4px}
-.section-head>span{font-size:12px;color:#7a808c}
-.agent-layout{gap:16px;grid-template-columns:1fr 320px}
-.agent-grid{gap:14px}
-.agent-card{padding:18px}
-.agent-card-head h3{font-size:15px;font-weight:600}
-.agent-card-head p{font-size:12px;margin-top:3px}
-.agent-avatar{width:40px;height:40px;font-size:12px;border-radius:11px}
-.status-badge{font-size:10px;padding:5px 8px;letter-spacing:.4px}
-.allowance>div:first-child{font-size:12px}
-.allowance b{font-size:13px}
-.allowance>small{font-size:11px}
-.recent-label{font-size:10px;letter-spacing:.8px;margin:14px 0 8px}
-.agent-tx{padding:10px 0;gap:10px}
-.agent-tx>div b,.agent-tx>span:last-child b{font-size:13px}
-.agent-tx small{font-size:11px}
-.agent-controls{margin-top:14px;gap:10px}
-.agent-controls label>span{font-size:11px;margin-bottom:6px}
-.agent-controls label>div{height:38px;border-radius:8px}
-.agent-controls input{font-size:13px}
-.freeze-btn{height:38px;padding:0 12px;font-size:12px;border-radius:8px;font-weight:600}
-.intercept-alert{padding:20px;border-radius:16px}
-.alert-head h3{font-size:16px}
-.alert-head p{font-size:12px}
-.alert-flow{margin:18px 0}
-.alert-flow>div{padding:10px;border-radius:8px}
-.alert-flow span{font-size:10px;margin-bottom:4px}
-.alert-flow code{font-size:12px}
-.alert-copy{padding:12px 14px;border-radius:0 8px 8px 0}
-.alert-copy b{font-size:13px}
-.alert-copy p{font-size:12px;line-height:1.55;margin-top:6px}
-.intercept-alert dl div{font-size:13px;padding:10px 0}
-.inspect-alert{height:40px;font-size:13px;border-radius:10px;font-weight:600;margin-top:8px}
-
 /* -- Analytics -- */
 .analytics-meta{height:44px;border-radius:10px;padding:0 16px;font-size:13px;gap:24px;margin-bottom:16px}
 .chart-card{padding:22px;min-height:360px;border-radius:16px}

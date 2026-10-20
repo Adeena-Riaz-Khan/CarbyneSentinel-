@@ -10,34 +10,7 @@ export type Transaction = {
   action: "ALLOW" | "FLAG" | "BLOCK";
 };
 
-export type Agent = {
-  id: string;
-  initials: string;
-  name: string;
-  description: string;
-  status: "ACTIVE" | "FROZEN";
-  spent: number;
-  limit: number;
-  color: "blue" | "purple";
-  recentTxs: { label: string; amount: string; status: "Allowed" | "Blocked"; ago: string }[];
-};
-
-export type InterceptAlert = {
-  id: string;
-  agentName: string;
-  title: string;
-  blockedAgo: string;
-  expectedRecipient: string;
-  actualRecipient: string;
-  explanation: string;
-  attemptedValue: string;
-  confidence: number;
-};
-
 export type GlobalStats = {
-  activeAgents: number;
-  interceptedCalls: number;
-  protectedVolume: string;
   totalCalls: number;
   avgLatencyMs: number;
   throughputTps: number;
@@ -82,9 +55,6 @@ export const seedUser = {
 };
 
 export const seedStats: GlobalStats = {
-  activeAgents: 12,
-  interceptedCalls: 3,
-  protectedVolume: "$450,000",
   totalCalls: 1852,
   avgLatencyMs: 285,
   throughputTps: 1428,
@@ -152,50 +122,6 @@ export const seedTransactions: Transaction[] = [
     action: "BLOCK",
   },
 ];
-
-export const seedAgents: Agent[] = [
-  {
-    id: "ag1",
-    initials: "TR",
-    name: "Treasury Rebalancer",
-    description: "Stablecoin allocation & yield",
-    status: "ACTIVE",
-    spent: 38400,
-    limit: 50000,
-    color: "blue",
-    recentTxs: [
-      { label: "USDC → DAI", amount: "$12,500", status: "Allowed", ago: "2 min ago" },
-      { label: "Deposit · Aave V3", amount: "$8,200", status: "Allowed", ago: "11 min ago" },
-    ],
-  },
-  {
-    id: "ag2",
-    initials: "AB",
-    name: "Arbitrage Bot",
-    description: "Cross-DEX price execution",
-    status: "ACTIVE",
-    spent: 14820,
-    limit: 25000,
-    color: "purple",
-    recentTxs: [
-      { label: "Uni V3 → Curve", amount: "$4,800", status: "Allowed", ago: "4 min ago" },
-      { label: "0x91f3...22aC", amount: "$9,100", status: "Blocked", ago: "9 min ago" },
-    ],
-  },
-];
-
-export const seedIntercept: InterceptAlert = {
-  id: "alert1",
-  agentName: "Treasury Rebalancer",
-  title: "Prompt injection detected",
-  blockedAgo: "Blocked 4 minutes ago",
-  expectedRecipient: "0x5A3...8362",
-  actualRecipient: "0x8ad...AF22",
-  explanation:
-    "Recipient drift identified. The agent's context contained an injected instruction that attempted to replace the approved treasury address.",
-  attemptedValue: "$42,600 USDC",
-  confidence: 98.7,
-};
 
 export const seedSettings: SettingsDoc = {
   fingerprintWeight: 25,

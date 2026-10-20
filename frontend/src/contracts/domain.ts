@@ -1,8 +1,6 @@
 /** Domain shapes shared by UI, services, and tests. */
 
 export type TxAction = "ALLOW" | "FLAG" | "BLOCK";
-export type AgentStatus = "ACTIVE" | "FROZEN";
-export type AgentColor = "blue" | "purple";
 
 export type Transaction = {
   id: string;
@@ -16,41 +14,7 @@ export type Transaction = {
   action: TxAction;
 };
 
-export type AgentRecentTx = {
-  label: string;
-  amount: string;
-  status: "Allowed" | "Blocked";
-  ago: string;
-};
-
-export type Agent = {
-  id: string;
-  initials: string;
-  name: string;
-  description: string;
-  status: AgentStatus;
-  spent: number;
-  limit: number;
-  color: AgentColor;
-  recentTxs: AgentRecentTx[];
-};
-
-export type InterceptAlert = {
-  id: string;
-  agentName: string;
-  title: string;
-  blockedAgo: string;
-  expectedRecipient: string;
-  actualRecipient: string;
-  explanation: string;
-  attemptedValue: string;
-  confidence: number;
-};
-
 export type GlobalStats = {
-  activeAgents: number;
-  interceptedCalls: number;
-  protectedVolume: string;
   totalCalls: number;
   avgLatencyMs: number;
   throughputTps: number;

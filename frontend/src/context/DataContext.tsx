@@ -9,10 +9,8 @@ import {
 } from "react";
 import { useAuth } from "../auth/AuthContext";
 import type {
-  Agent,
   BenchmarkDoc,
   GlobalStats,
-  InterceptAlert,
   SettingsDoc,
   Transaction,
 } from "../contracts/domain";
@@ -27,13 +25,10 @@ type DataCtx = {
   user: typeof seedUser;
   stats: GlobalStats | null;
   transactions: Transaction[];
-  agents: Agent[];
-  intercept: InterceptAlert | null;
   settings: SettingsDoc | null;
   benchmarks: BenchmarkDoc | null;
   refresh: () => Promise<void>;
   saveSettings: (patch: Partial<SettingsDoc>) => Promise<boolean>;
-  toggleFreeze: (agentId: string) => Promise<boolean>;
 };
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -44,8 +39,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [intercept, setIntercept] = useState<InterceptAlert | null>(null);
   const [settings, setSettings] = useState<SettingsDoc | null>(null);
   const [benchmarks, setBenchmarks] = useState<BenchmarkDoc | null>(null);
 
@@ -71,11 +64,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [s, txs, ag, al, st, bm] = await Promise.all([
+      const [s, txs, st, bm] = await Promise.all([
         api.getStats(),
         api.getTransactions(),
-        api.getAgents(),
-        api.getIntercept(),
         api.getSettings().catch((e) => {
           if (isApiError(e) && e.code === "FORBIDDEN") return null;
           throw e;
@@ -84,8 +75,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ]);
       setStats(s);
       setTransactions(txs);
-      setAgents(ag);
-      setIntercept(al);
       setSettings(st);
       setBenchmarks(bm);
     } catch (e) {
@@ -100,8 +89,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (status !== "authenticated") {
       setStats(null);
       setTransactions([]);
-      setAgents([]);
-      setIntercept(null);
       setSettings(null);
       setBenchmarks(null);
       return;
@@ -112,11 +99,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setError(null);
     void (async () => {
       try {
-        const [s, txs, ag, al, st, bm] = await Promise.all([
+        const [s, txs, st, bm] = await Promise.all([
           api.getStats(controller.signal),
           api.getTransactions(controller.signal),
-          api.getAgents(controller.signal),
-          api.getIntercept(controller.signal),
           api.getSettings(controller.signal).catch((e) => {
             if (isApiError(e) && e.code === "FORBIDDEN") return null;
             throw e;
@@ -126,8 +111,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setStats(s);
         setTransactions(txs);
-        setAgents(ag);
-        setIntercept(al);
         setSettings(st);
         setBenchmarks(bm);
       } catch (e) {
@@ -157,24 +140,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const toggleFreeze = useCallback(
-    async (agentId: string) => {
-      const current = agents.find((a) => a.id === agentId);
-      if (!current) return false;
-      try {
-        const next = await api.freezeAgent(agentId, current.status !== "FROZEN");
-        setAgents(next);
-        setError(null);
-        return true;
-      } catch (e) {
-        if (isApiError(e)) setError(e.message);
-        else setError("Could not update agent.");
-        return false;
-      }
-    },
-    [agents],
-  );
-
   const value = useMemo(
     () => ({
       loading,
@@ -183,13 +148,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       user: profileUser,
       stats,
       transactions,
-      agents,
-      intercept,
       settings,
       benchmarks,
       refresh,
       saveSettings,
-      toggleFreeze,
     }),
     [
       loading,
@@ -198,13 +160,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       profileUser,
       stats,
       transactions,
-      agents,
-      intercept,
       settings,
       benchmarks,
       refresh,
       saveSettings,
-      toggleFreeze,
     ],
   );
 
