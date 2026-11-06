@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = ROOT / 'data' / 'processed'
-MASTER_JSON = ROOT / 'processed' / 'master_dataset.json'
+MASTER_JSON = ROOT / 'processed' / 'master_dataset_phase2.json'
 FIG_DIR = ROOT / 'reports' / 'figures'
 FIG_PATH = FIG_DIR / 'vulnerability_class_distribution.png'
 CSV_DEFAULT = ROOT / 'reports' / 'class_counts.csv'
@@ -212,7 +212,7 @@ def plot_bars(rows: list[dict[str, Any]], path: Path) -> None:
 def parse_args(argv: Optional[list[str]]=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description='Plot vulnerability class distribution')
     p.add_argument('--output-csv', nargs='?', const=str(CSV_DEFAULT), default=None, help=f'Write CSV breakdown (default path: {CSV_DEFAULT})')
-    p.add_argument('--no-master', action='store_true', help='Skip processed/master_dataset.json')
+    p.add_argument('--no-master', action='store_true', help='Skip processed/master_dataset_phase2.json')
     p.add_argument('--include-intent-bench', action='store_true', help='Include defi_intent_bench.jsonl exploits (may overlap DeFiHackLabs)')
     p.add_argument('--figure', type=Path, default=FIG_PATH, help='Output PNG path')
     return p.parse_args(argv)

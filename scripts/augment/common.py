@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 ROOT = Path(__file__).resolve().parents[2]
 PROCESSED = ROOT / 'processed'
-MASTER_JSON = PROCESSED / 'master_dataset.json'
+MASTER_JSON = PROCESSED / 'master_dataset_phase2.json'
 OUT_JSONL = ROOT / 'data' / 'processed' / 'obfuscation_benchmark.jsonl'
 FAIL_JSONL = ROOT / 'data' / 'processed' / 'obfuscation_failed.jsonl'
 SEED_MANIFEST = ROOT / 'data' / 'processed' / 'augment_seeds_wave_ab.json'

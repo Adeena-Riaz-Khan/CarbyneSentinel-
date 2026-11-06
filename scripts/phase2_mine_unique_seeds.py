@@ -23,7 +23,13 @@ AUG_JSONL = ROOT / "data" / "processed" / "obfuscation_benchmark.jsonl"
 DIVE_JSONL = ROOT / "data" / "processed" / "dive_vulnerable.jsonl"
 DAPPSCAN_JSONL = ROOT / "data" / "processed" / "dappscan_vulnerable.jsonl"
 DEFI_JSONL = ROOT / "data" / "processed" / "defihacklabs_exploits.jsonl"
-DIVE_LABELS = ROOT / "DIVE_Labels" / "Labels" / "DIVE_Labels.csv"
+# Prefer data/DIVE (organized layout); keep legacy DIVE_Labels/ fallback
+_DIVE_LABEL_CANDIDATES = [
+    ROOT / "data" / "DIVE" / "Labels" / "DIVE_Labels.csv",
+    ROOT / "data" / "DIVE" / "DIVE_Labels.csv",
+    ROOT / "DIVE_Labels" / "Labels" / "DIVE_Labels.csv",
+]
+DIVE_LABELS = next((p for p in _DIVE_LABEL_CANDIDATES if p.is_file()), _DIVE_LABEL_CANDIDATES[0])
 PHASE1_JSON = ROOT / "data" / "processed" / "phase1_unique_seed_report.json"
 
 OUT_CANDIDATES = ROOT / "data" / "processed" / "phase2_grow_candidates.jsonl"
