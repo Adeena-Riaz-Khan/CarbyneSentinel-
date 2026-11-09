@@ -92,6 +92,21 @@ def run_self_checks() -> list[str]:
     if unknown[0]["opcode"] != "UNKNOWN_0x0c":
         errors.append("unknown opcode not handled explicitly")
 
+    for n in range(1, 33):
+        op_byte = 0x5F + n
+        imm_hex = ("ab" * n)
+        seq = f"{op_byte:02x}{imm_hex}00"
+        decoded = disassemble(seq)
+        if len(decoded) != 2:
+            errors.append(f"PUSH{n} sequence length expected 2 got {len(decoded)}")
+            break
+        if decoded[0]["opcode"] != f"PUSH{n}" or decoded[0]["size"] != 1 + n or decoded[0]["immediate"] != imm_hex:
+            errors.append(f"PUSH{n} decode mismatch")
+            break
+        if decoded[1]["offset"] != 1 + n or decoded[1]["opcode"] != "STOP":
+            errors.append(f"PUSH{n} next instruction offset mismatch")
+            break
+
     return errors
 
 

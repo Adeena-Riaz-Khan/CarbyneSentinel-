@@ -225,6 +225,7 @@ def validate_cfg(instructions: list[dict], cfg: dict) -> list[str]:
     if covered != expected_offsets:
         errors.append("instruction coverage mismatch between CFG and disassembly")
 
+    offset_to_ins = {ins["offset"]: ins for ins in instructions}
     for block in blocks:
         body = block["instructions"]
         if not body:
@@ -233,15 +234,13 @@ def validate_cfg(instructions: list[dict], cfg: dict) -> list[str]:
         if body[0]["offset"] != block["start_offset"]:
             errors.append(f"block {block['id']} start_offset mismatch")
         last = body[-1]
-        expected_end = last["offset"] + next(
-            ins["size"] for ins in instructions if ins["offset"] == last["offset"]
-        ) - 1
+        expected_end = last["offset"] + offset_to_ins[last["offset"]]["size"] - 1
         if block["end_offset"] != expected_end:
             errors.append(f"block {block['id']} end_offset mismatch")
         if block["instruction_count"] != len(body):
             errors.append(f"block {block['id']} instruction_count mismatch")
         for i in range(len(body) - 1):
-            cur = next(ins for ins in instructions if ins["offset"] == body[i]["offset"])
+            cur = offset_to_ins[body[i]["offset"]]
             nxt = body[i + 1]
             if cur["offset"] + cur["size"] != nxt["offset"]:
                 errors.append(f"block {block['id']} instructions are not continuous")

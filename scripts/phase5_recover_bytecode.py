@@ -28,6 +28,8 @@ MASTER_BACKUP_PATH = (
 SPLITS_PATH = ROOT / "data" / "processed" / "phase4_splits.json"
 LOG_PATH = ROOT / "processed" / "logs" / "bytecode_recovery_log.json"
 APPROVED_RUN_NAME = "approved_stage_a_fallback_and_stage_d"
+NOVEMBER_RUN_NAME = "november_exact_batch_a"
+NOVEMBER_BATCH_B_WAVE1_RUN = "november_batch_b_wave1"
 
 SAMPLE_IDS = [
     "SMARTBUGS_denial_of_service_auction",
@@ -38,8 +40,40 @@ SAMPLE_IDS = [
     "DIVE_0x00ea6f91b00e080e816f1bb2fad71b0fe1528983",
 ]
 
-SMARTBUGS_FALLBACK_FROM = "0.4.15"
-SMARTBUGS_FALLBACK_TO = "0.4.16"
+NOVEMBER_EXACT_BATCH_A = [
+    "DIVE_0x11571485d2b56e5d25f47e4883389dd0cde8bf36",
+    "DIVE_0x77f104bbdecb179e4cc756e81636ecc18303d91d",
+    "DIVE_0x411139af515804562ddca220220728c9791cc714",
+    "SMARTBUGS_reentrancy_spank_chain_payment",
+]
+
+NOVEMBER_BATCH_B_WAVE1 = [
+    "SMARTBUGS_arithmetic_insecure_transfer",
+    "SMARTBUGS_arithmetic_timelock",
+    "SMARTBUGS_reentrancy_etherstore",
+    "SMARTBUGS_bad_randomness_blackjack",
+    "SMARTBUGS_access_control_parity_wallet_bug_2",
+    "DIVE_0xdadcdbf39bb4dfc33b40489025a1db7d1268b1db",
+    "DIVE_0x0d547f8b8d7201523a834addbb27e40140ee6f18",
+    "DIVE_0x99e36751a954b1c653f5faeee844179d21fa306d",
+    "DIVE_0xf02904cbf8e5134aeaf45626e96b782ed233fe04",
+    "DIVE_0xb444cb2bcb19180602328fa774738cb8dbd6677b",
+    "DIVE_0x0860ba896cf7c9f198d1bed18de2b81510c1cdc9",
+]
+
+APPROVED_FALLBACKS: dict[str, str] = {
+    "SMARTBUGS_arithmetic_insecure_transfer": "0.4.11",
+    "SMARTBUGS_arithmetic_timelock": "0.4.11",
+    "SMARTBUGS_reentrancy_etherstore": "0.4.11",
+    "SMARTBUGS_bad_randomness_blackjack": "0.4.11",
+    "SMARTBUGS_access_control_parity_wallet_bug_2": "0.4.11",
+    "DIVE_0xdadcdbf39bb4dfc33b40489025a1db7d1268b1db": "0.4.11",
+    "DIVE_0x0d547f8b8d7201523a834addbb27e40140ee6f18": "0.4.11",
+    "DIVE_0x99e36751a954b1c653f5faeee844179d21fa306d": "0.4.11",
+    "DIVE_0xf02904cbf8e5134aeaf45626e96b782ed233fe04": "0.4.18",
+    "DIVE_0xb444cb2bcb19180602328fa774738cb8dbd6677b": "0.4.20",
+    "DIVE_0x0860ba896cf7c9f198d1bed18de2b81510c1cdc9": "0.4.20",
+}
 
 
 def load_master() -> dict[str, dict]:
@@ -175,6 +209,9 @@ def compile_runtime_only(source: str, version: str) -> tuple[bool, str | None, s
 
 def validate_runtime_hex(bytecode: str) -> list[str]:
     errors = []
+    text = bytecode or ""
+    if re.search(r"__\$[A-Za-z0-9_]+\$__", text) or re.search(r"__[A-Za-z0-9_:.]{1,64}__", text):
+        return ["unlinked library placeholder in runtime bytecode"]
     try:
         data = parse_hex(bytecode)
     except ValueError as exc:
@@ -203,30 +240,38 @@ def write_recovery_bytecode(dataset: str, contract_id: str, bytecode: str) -> st
 
 
 def classify_target(row: dict) -> tuple[str, str | None, str]:
+    cid = row.get("contract_id") or ""
     dataset = row.get("source_dataset")
     recorded = str(row.get("compiler_version") or "").strip()
     version, reason = normalize_recorded_version(recorded)
 
-    if dataset == "smartbugs":
-        if recorded == SMARTBUGS_FALLBACK_FROM:
-            return "smartbugs_fallback_0416", SMARTBUGS_FALLBACK_FROM, "ok"
-        if version is None:
-            return "deferred", None, reason
-        parts = parse_semver(version)
-        if parts is not None and (parts[0], parts[1]) == (0, 4) and parts[2] < 11:
-            return (
-                "deferred",
-                version,
-                f"deferred: solc {version} below 0.4.11 unsupported by py-solc-x",
-            )
-        return "exact", version, "ok"
+    if dataset not in {"smartbugs", "dive"}:
+        return "deferred", None, f"dataset {dataset} not in approved recovery"
 
-    if dataset == "dive":
-        if version is None:
-            return "deferred", None, reason
-        return "exact", version, "ok"
+    if cid in APPROVED_FALLBACKS:
+        return (
+            "approved_fallback",
+            APPROVED_FALLBACKS[cid],
+            f"approved fallback map; recorded={recorded}; exact_note={reason}",
+        )
 
-    return "deferred", None, f"dataset {dataset} not in approved Stage A/D"
+    if version is None:
+        return "deferred", None, reason
+
+    parts = parse_semver(version)
+    if (
+        dataset == "smartbugs"
+        and parts is not None
+        and (parts[0], parts[1]) == (0, 4)
+        and parts[2] < 11
+    ):
+        return (
+            "deferred",
+            version,
+            f"deferred: solc {version} below 0.4.11 unsupported by py-solc-x",
+        )
+
+    return "exact", version, "ok"
 
 
 def recover_one(row: dict, splits: dict) -> dict:
@@ -306,21 +351,25 @@ def recover_one(row: dict, splits: dict) -> dict:
     used_fallback = False
     fallback_reason = None
 
-    if mode == "smartbugs_fallback_0416":
-        allowed, allow_note = pragma_allows_version(pragma, SMARTBUGS_FALLBACK_TO)
+    if mode == "approved_fallback":
+        fb_version = APPROVED_FALLBACKS.get(cid)
+        if not fb_version:
+            entry["failure_reason"] = "approved_fallback mode without APPROVED_FALLBACKS entry"
+            entry["detail"] = entry["failure_reason"]
+            return entry
+        allowed, allow_note = pragma_allows_version(pragma, fb_version)
         if not allowed:
-            entry["failure_reason"] = (
-                f"approved 0.4.16 fallback blocked: {allow_note}"
-            )
+            entry["failure_reason"] = f"approved fallback blocked: {allow_note}"
             entry["detail"] = allow_note
             return entry
-        use_version = SMARTBUGS_FALLBACK_TO
+        use_version = fb_version
         used_fallback = True
         fallback_reason = (
-            "recorded 0.4.15 resolves to unusable nightly under py-solc-x; "
-            f"approved fallback to 0.4.16 because {allow_note}"
+            f"original={recorded}; exact unavailable or unsupported; "
+            f"approved fallback to {fb_version}; pragma={allow_note}"
         )
 
+    entry["attempted_compiler_version"] = use_version
     ok, bytecode, detail = compile_runtime_only(source, use_version)
     entry["detail"] = detail
     entry["used_fallback"] = used_fallback
@@ -481,7 +530,16 @@ def validate_success_entries(entries: list[dict], master: dict[str, dict]) -> di
 
 
 def unavailable_reasons(master: dict[str, dict], splits: dict, recovery_entries: list[dict]) -> list[dict]:
-    by_id = {e["contract_id"]: e for e in recovery_entries}
+    by_id: dict[str, dict] = {}
+    for entry in recovery_entries:
+        cid = entry.get("contract_id")
+        if not cid:
+            continue
+        prev = by_id.get(cid)
+        prev_specific = bool(prev and (prev.get("failure_reason") or prev.get("detail")))
+        cur_specific = bool(entry.get("failure_reason") or entry.get("detail"))
+        if prev is None or cur_specific or not prev_specific:
+            by_id[cid] = entry
     rows = []
     for name in ("train", "val", "test"):
         for cid in splits["splits"][name]:
@@ -579,20 +637,21 @@ def audit_after_integration(master_rows: list[dict], splits: dict) -> dict:
     }
 
 
-def run_validate_integrate() -> int:
+def run_validate_integrate(run_name: str | None = None) -> int:
     master = load_master()
     splits = load_splits()
     payload = json.loads(LOG_PATH.read_text(encoding="utf-8"))
+    target_run = run_name or APPROVED_RUN_NAME
     approved = None
     for run in payload.get("runs", []):
-        if run.get("name") == APPROVED_RUN_NAME:
+        if run.get("name") == target_run:
             approved = run
     if approved is None:
-        print(f"missing run {APPROVED_RUN_NAME}")
+        print(f"missing run {target_run}")
         return 1
 
     success_entries = [e for e in approved["entries"] if e.get("success")]
-    print(f"validating success entries={len(success_entries)}")
+    print(f"run={target_run} validating success entries={len(success_entries)}")
     validation = validate_success_entries(success_entries, master)
     print(
         f"validation ok={validation['validated_ok']} failed={validation['validated_failed']} "
@@ -619,7 +678,10 @@ def run_validate_integrate() -> int:
 
     master_rows = json.loads(MASTER_PATH.read_text(encoding="utf-8"))
     audit = audit_after_integration(master_rows, splits)
-    unavailable = unavailable_reasons( {r["contract_id"]: r for r in master_rows}, splits, approved["entries"])
+    all_entries = []
+    for run in payload.get("runs", []):
+        all_entries.extend(run.get("entries", []))
+    unavailable = unavailable_reasons({r["contract_id"]: r for r in master_rows}, splits, all_entries)
     print(f"unavailable_after_integration={len(unavailable)}")
 
     payload.setdefault("audits", []).append(
@@ -671,20 +733,32 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample", action="store_true")
     parser.add_argument("--approved-recovery", action="store_true")
+    parser.add_argument("--november-exact-batch-a", action="store_true")
+    parser.add_argument("--november-batch-b-wave1", action="store_true")
     parser.add_argument("--validate-integrate", action="store_true")
+    parser.add_argument("--integrate-run", type=str, default="")
     parser.add_argument("--ids", type=str, default="")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     if args.validate_integrate:
-        return run_validate_integrate()
+        return run_validate_integrate(args.integrate_run.strip() or None)
 
     chosen = sum(
-        bool(x) for x in [args.sample, args.approved_recovery, bool(args.ids.strip())]
+        bool(x)
+        for x in [
+            args.sample,
+            args.approved_recovery,
+            args.november_exact_batch_a,
+            args.november_batch_b_wave1,
+            bool(args.ids.strip()),
+        ]
     )
     if chosen != 1:
         print(
-            "Choose exactly one of: --sample | --approved-recovery | --ids a,b,c | --validate-integrate"
+            "Choose exactly one of: --sample | --approved-recovery | "
+            "--november-exact-batch-a | --november-batch-b-wave1 | "
+            "--ids a,b,c | --validate-integrate"
         )
         return 2
 
@@ -693,6 +767,12 @@ def main() -> int:
     if args.sample:
         target_ids = list(SAMPLE_IDS)
         run_name = "sample"
+    elif args.november_exact_batch_a:
+        target_ids = list(NOVEMBER_EXACT_BATCH_A)
+        run_name = NOVEMBER_RUN_NAME
+    elif args.november_batch_b_wave1:
+        target_ids = list(NOVEMBER_BATCH_B_WAVE1)
+        run_name = NOVEMBER_BATCH_B_WAVE1_RUN
     elif args.ids.strip():
         target_ids = [x.strip() for x in args.ids.split(",") if x.strip()]
         run_name = "ids"

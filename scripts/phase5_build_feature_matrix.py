@@ -69,23 +69,43 @@ def feature_names() -> list[str]:
 
 
 def load_recovery_reasons() -> dict[str, str]:
-    reasons = {}
+    generic_reasons = {"unknown", "unavailable_bytecode", "recovery_failed", "failed", "deferred"}
+    audit_specific = {}
+    run_specific = {}
+    fallback = {}
     if not RECOVERY_LOG.is_file():
-        return reasons
+        return {}
     payload = json.loads(RECOVERY_LOG.read_text(encoding="utf-8"))
     for audit in payload.get("audits", []):
         for row in audit.get("unavailable", []) or []:
             cid = row.get("contract_id")
-            if cid:
-                reasons[cid] = row.get("reason") or "unavailable_bytecode"
+            reason = (row.get("reason") or "").strip()
+            if not cid or not reason:
+                continue
+            if reason not in generic_reasons:
+                audit_specific[cid] = reason
+            elif cid not in fallback:
+                fallback[cid] = reason
     for run in payload.get("runs", []):
         for entry in run.get("entries", []):
             cid = entry.get("contract_id")
-            if not cid or cid in reasons:
+            if not cid or entry.get("success"):
                 continue
-            if entry.get("success"):
-                continue
-            reasons[cid] = entry.get("failure_reason") or entry.get("status") or "recovery_failed"
+            fr = (entry.get("failure_reason") or entry.get("detail") or "").strip()
+            st = (entry.get("status") or "").strip()
+            if fr and fr not in generic_reasons:
+                run_specific[cid] = fr
+            elif st and cid not in fallback:
+                fallback[cid] = st
+    reasons = {}
+    all_ids = set(fallback) | set(run_specific) | set(audit_specific)
+    for cid in all_ids:
+        if cid in audit_specific:
+            reasons[cid] = audit_specific[cid]
+        elif cid in run_specific:
+            reasons[cid] = run_specific[cid]
+        else:
+            reasons[cid] = fallback.get(cid) or "unavailable_bytecode"
     return reasons
 
 

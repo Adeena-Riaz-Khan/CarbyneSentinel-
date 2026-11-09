@@ -72,6 +72,15 @@ def run_cfg_self_checks() -> list[str]:
     if any(e["type"] == "jump" for e in cfg4["edges"]):
         errors.append("dynamic toy: should not invent a resolved jump")
 
+    true_dyn_hex = "355600"
+    ins5 = disassemble(true_dyn_hex)
+    cfg5 = build_cfg(ins5)
+    errs5 = validate_cfg(ins5, cfg5)
+    if errs5:
+        errors.extend(["true dynamic toy: " + e for e in errs5])
+    if cfg5["stats"]["unresolved_jumps"] != 1 or cfg5["stats"]["resolved_jumps"] != 0:
+        errors.append("true dynamic toy: CALLDATALOAD + JUMP must be counted as 1 unresolved jump")
+
     return errors
 
 

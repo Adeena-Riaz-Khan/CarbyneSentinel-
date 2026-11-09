@@ -3,6 +3,8 @@ import { ApiError } from "../contracts/errors";
 import {
   __resetApiForTests,
   __setNetworkDown,
+  analyzeBytecode,
+  getDemoExamples,
   getStats,
   getTransactions,
   patchSettings,
@@ -60,5 +62,17 @@ describe("apiClient authz + network (BR-NET-1, BR-PERM-1)", () => {
     await signIn({ email: "alex@carbyne.security", password: "Carbyne#Secure1!" });
     await signOut();
     await expect(getTransactions()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("loads curated demo examples and validates malformed or unlinked bytecode", async () => {
+    await signIn({ email: "alex@carbyne.security", password: "Carbyne#Secure1!" });
+    const demos = await getDemoExamples();
+    expect(demos.length).toBeGreaterThanOrEqual(3);
+    const oddReport = await analyzeBytecode("0x6080604");
+    expect(oddReport.validation.ok).toBe(false);
+    expect(oddReport.validation.errors[0]).toContain("odd");
+    const libReport = await analyzeBytecode("6080__SafeMath____________________00");
+    expect(libReport.validation.ok).toBe(false);
+    expect(libReport.validation.errors[0]).toContain("unlinked library placeholder");
   });
 });

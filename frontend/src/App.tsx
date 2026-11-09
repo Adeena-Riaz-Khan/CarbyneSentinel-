@@ -5,6 +5,7 @@ import { EmptyState } from "./components/EmptyState";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { RequirePermission } from "./components/RequirePermission";
 import { DataProvider, useData } from "./context/DataContext";
+import type { BytecodeAnalysisReport, DemoExample } from "./contracts/domain";
 import { PENDING_FEED_TOTAL } from "./contracts/grids";
 import {
   filterTransactions,
@@ -12,6 +13,7 @@ import {
   scoreRiskBand,
 } from "./domain/calculations";
 import AuthPage from "./pages/AuthPage";
+import { analyzeBytecode, getDemoExamples } from "./services/apiClient";
 import { sanitizeSearchQuery } from "./validation/forms";
 
 type Page = "monitor" | "analytics" | "settings" | "auth";
@@ -303,44 +305,236 @@ function Monitor({ openInspector }: { openInspector: () => void }) {
   );
 }
 
-function RiskGraph() {
-  return <div className="graph"><svg viewBox="0 0 300 120"><path className="edge" d="M32 62 96 27M32 62l67 40M96 27l54 35M99 102l51-40m0 0 56-36m-56 36 60 41m-60-41h112" /><path className="danger-edge" d="M150 62c70-50 94 45 18 37-45-5-29-70 31-48" /><g>{[[32,62],[96,27],[99,102],[150,62],[206,26],[210,103],[262,62]].map(([x,y],i)=><circle key={i} cx={x} cy={y} r={i===3?11:7} className={i===3?"danger-node":"node"} />)}</g></svg><span className="graph-tag">Reentrant call loop</span></div>;
-}
-
 function Inspector({ close }: { close: () => void }) {
+  const [demos, setDemos] = useState<DemoExample[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [bytecode, setBytecode] = useState<string>("");
+  const [report, setReport] = useState<BytecodeAnalysisReport | null>(null);
+  const [busy, setBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void getDemoExamples().then((list) => {
+      setDemos(list);
+      if (list.length > 0) {
+        setSelectedId(list[0].id);
+        setBytecode(list[0].bytecode);
+        setBusy(true);
+        void analyzeBytecode(list[0].bytecode, list[0].id)
+          .then((r) => setReport(r))
+          .finally(() => setBusy(false));
+      }
+    });
+  }, []);
+
+  const currentDemo = demos.find((d) => d.id === selectedId) ?? null;
+
+  const runAnalysis = (bc: string, cid?: string | null) => {
+    setBusy(true);
+    void analyzeBytecode(bc, cid)
+      .then((r) => setReport(r))
+      .finally(() => setBusy(false));
+  };
+
+  const valOk = report?.validation.ok ?? false;
+  const fp = report?.fingerprint;
+  const cfg = report?.cfg;
+  const pred = report?.prediction;
+  const dis = report?.disassembly;
+  const confPct = pred?.confidence != null ? Math.round(pred.confidence * 100) : 0;
+
   return (
     <div className="modal-backdrop" onMouseDown={close}>
       <section className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div><div className="eyebrow danger-text">CRITICAL THREAT · PENDING</div><h2>Transaction diagnostics</h2><div className="tx-meta"><code>0x3c1b8e749f4a...2dA7a82</code><span>Block pending</span><span>64.1 Gwei</span></div></div>
+          <div>
+            <div className={valOk ? "eyebrow" : "eyebrow danger-text"}>
+              {valOk ? "LIVE BYTECODE INFERENCE · PHASE 5 PIPELINE" : "VALIDATION REJECTED · INPUT CHECK"}
+            </div>
+            <h2>Runtime Bytecode Security Analyzer</h2>
+            <div className="tx-meta">
+              <code>{report?.contract_id || "custom_runtime_bytecode"}</code>
+              {currentDemo?.ground_truth_label && (
+                <span>Dataset label: {currentDemo.ground_truth_label} ({currentDemo.dataset_source}, {currentDemo.split})</span>
+              )}
+              {currentDemo?.used_fallback && (
+                <span>Fallback compiler ({currentDemo.compiler_version})</span>
+              )}
+            </div>
+          </div>
           <button className="icon-btn" onClick={close}><Icon name="close" /></button>
         </div>
-        <div className="code-grid">
-          <div><div className="code-label"><span>Raw bytecode</span><button><Icon name="copy" size={13} /> Copy</button></div><code>0x608060405234801561001057600080fd5b50<span>6107d8</span>806100206000396000f3fe...</code></div>
-          <div><div className="code-label"><span>Disassembled EVM opcodes</span><span>412 instructions</span></div><code>PUSH1 0x80 · PUSH1 0x40 · MSTORE · CALLVALUE · <span>DELEGATECALL</span> · JUMPI</code></div>
+
+        <div style={{ padding: "12px 18px 0", display: "grid", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={selectedId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedId(id);
+                const found = demos.find((d) => d.id === id);
+                if (found) {
+                  setBytecode(found.bytecode);
+                  runAnalysis(found.bytecode, found.id);
+                }
+              }}
+              style={{ flex: 1, height: "35px", border: "1px solid #303139", borderRadius: "7px", background: "#0b0b0e", padding: "0 10px", fontSize: "10px" }}
+            >
+              {demos.map((d) => (
+                <option key={d.id} value={d.id}>{d.title}</option>
+              ))}
+              <option value="CUSTOM">Custom pasted runtime bytecode</option>
+            </select>
+            <button
+              className="btn primary"
+              type="button"
+              disabled={busy}
+              onClick={() => runAnalysis(bytecode, selectedId === "CUSTOM" ? null : selectedId)}
+            >
+              <Icon name="play" size={14} /> {busy ? "Analyzing…" : "Analyze bytecode"}
+            </button>
+          </div>
+          {currentDemo && (
+            <small style={{ color: "#8994a7", fontSize: "9px" }}>{currentDemo.description}</small>
+          )}
+          <textarea
+            value={bytecode}
+            onChange={(e) => {
+              setSelectedId("CUSTOM");
+              setBytecode(e.target.value);
+            }}
+            placeholder="Paste EVM runtime bytecode (0x...)"
+            rows={3}
+            style={{ width: "100%", border: "1px solid #232f40", background: "#080c12", borderRadius: "7px", padding: "8px", fontSize: "9px", fontFamily: "JetBrains Mono, monospace", color: "#c6ced9", resize: "vertical" }}
+          />
         </div>
+
+        {report && !valOk && (
+          <div style={{ margin: "12px 18px", padding: "12px", border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", borderRadius: "8px" }}>
+            <b style={{ color: "#f27575", fontSize: "11px", display: "block" }}>Input Validation Errors</b>
+            {report.validation.errors.map((err, i) => (
+              <p key={i} style={{ color: "#ffb4b4", fontSize: "10px", marginTop: "4px" }}>• {err}</p>
+            ))}
+          </div>
+        )}
+
+        <div className="code-grid">
+          <div>
+            <div className="code-label">
+              <span>Disassembly preview</span>
+              <span>{dis ? `${dis.instruction_count} instructions (${report?.validation.bytecode_size_bytes ?? 0} bytes)` : "No instructions"}</span>
+            </div>
+            <pre style={{ margin: 0, maxHeight: "110px", overflow: "auto", fontSize: "8px", color: "#9ca8b9" }}>
+              {dis?.preview_listing || "Validation failed — disassembly not executed."}
+            </pre>
+          </div>
+          <div>
+            <div className="code-label">
+              <span>Top opcode frequency ratios (145-d vocabulary)</span>
+              <span>Unknown bytes: {report?.validation.unknown_opcode_count ?? 0}</span>
+            </div>
+            <code style={{ display: "block", lineHeight: 1.7 }}>
+              {dis?.top_opcode_ratios.map((o) => `${o.opcode}: ${(o.ratio * 100).toFixed(1)}%`).join(" · ") || "—"}
+            </code>
+          </div>
+        </div>
+
         <div className="signal-grid">
           <article className="signal-card fingerprint">
-            <div className="signal-title"><span className="signal-index">01</span><div><h3>Manipulation fingerprint</h3><p>Code-level evasion analysis</p></div><span className="signal-ok"><Icon name="check" size={13} /></span></div>
-            <div className="big-score"><span>Entropy score</span><b>0.91</b></div><div className="meter"><i style={{width:"91%"}} /></div>
-            <div className="threat-label"><Icon name="alert" size={14} /> Deliberately disguised / obfuscated</div>
-            <dl><div><dt>Junk insertion</dt><dd>Detected</dd></div><div><dt>Control flow flattening</dt><dd>High</dd></div><div><dt>Bytecode similarity</dt><dd>8.3%</dd></div></dl>
+            <div className="signal-title"><span className="signal-index">01</span><div><h3>Fingerprint v0</h3><p>Entropy & jump ratios (9 core + 5 extra)</p></div><span className="signal-ok"><Icon name="check" size={13} /></span></div>
+            <div className="big-score"><span>Byte Shannon entropy</span><b>{fp ? fp.bytecode_shannon_entropy.toFixed(2) : "—"}</b></div>
+            <div className="meter"><i style={{ width: `${fp ? Math.min(100, (fp.bytecode_shannon_entropy / 8) * 100) : 0}%` }} /></div>
+            <dl>
+              <div><dt>Opcode entropy</dt><dd>{fp ? fp.opcode_shannon_entropy.toFixed(3) : "—"}</dd></div>
+              <div><dt>Jump ratio (JUMP+JUMPI)</dt><dd>{fp ? `${(fp.jump_ratio * 100).toFixed(2)}%` : "—"}</dd></div>
+              <div><dt>Conditional / Uncond.</dt><dd>{fp ? `${fp.jumpi_count} / ${fp.jump_count}` : "—"}</dd></div>
+              <div><dt>Tail truncated PUSH</dt><dd>{report?.validation.truncated_push_at_tail ? "Yes (CBOR tail)" : "No"}</dd></div>
+            </dl>
           </article>
+
           <article className="signal-card structural">
-            <div className="signal-title"><span className="signal-index">02</span><div><h3>Structural GCN detector</h3><p>Control-flow graph analysis</p></div><span className="signal-ok"><Icon name="check" size={13} /></span></div>
-            <div className="big-score"><span>CFG risk score</span><b>0.84</b></div><div className="meter"><i style={{width:"84%"}} /></div>
-            <RiskGraph /><div className="graph-legend"><span><i className="node-key" /> Normal node</span><span><i className="risk-key" /> Flagged loop</span></div>
+            <div className="signal-title"><span className="signal-index">02</span><div><h3>Basic-Block CFG</h3><p>Static control-flow graph recovery</p></div><span className="signal-ok"><Icon name="check" size={13} /></span></div>
+            <div className="big-score"><span>Basic blocks / edges</span><b>{cfg ? `${cfg.block_count} / ${cfg.edge_count}` : "—"}</b></div>
+            <dl>
+              <div><dt>Resolved static jumps</dt><dd>{cfg ? cfg.resolved_jumps : "—"}</dd></div>
+              <div><dt>Unresolved dynamic jumps</dt><dd>{cfg ? cfg.unresolved_jumps : "—"}</dd></div>
+            </dl>
+            <div className="explanation" style={{ marginTop: "10px" }}>
+              <span>Dynamic jump accounting</span>
+              <p>{cfg?.dynamic_jump_note || "CFG resolves immediate PUSH+JUMP/JUMPI targets and explicitly tracks stack-computed jumps."}</p>
+            </div>
           </article>
+
           <article className="signal-card semantic">
-            <div className="signal-title"><span className="signal-index">03</span><div><h3>Semantic LLM auditor</h3><p>QLoRA intent reasoning</p></div><span className="signal-ok"><Icon name="check" size={13} /></span></div>
-            <div className="intent-box"><span>Classified intent</span><b>Actual exploit</b><em>94.2% confidence</em></div>
-            <div className="explanation"><span>Model explanation</span><p>The transaction uses a flash loan to distort the pool's spot price, then calls the protocol's unguarded oracle before liquidity normalizes. Expected extraction: <b>$1.82M.</b></p></div>
-            <div className="model-meta"><span>Model <b>Sentinel-7B</b></span><span>Inference <b>207ms</b></span></div>
+            <div className="signal-title">
+              <span className="signal-index">03</span>
+              <div>
+                <h3>ML Vulnerability Classifier</h3>
+                <p>{pred?.feature_count ?? 155}-d {pred?.feature_group ?? "pruned155"} ({pred?.estimator_type ?? "GradientBoostingClassifier"})</p>
+              </div>
+              <span className="signal-ok"><Icon name="check" size={13} /></span>
+            </div>
+            <div className="intent-box">
+              <span>Predicted vulnerability class (9-class ranking)</span>
+              <b>{pred?.model_available ? (pred.predicted_class ?? "—") : "Model artifact unavailable"}</b>
+              {pred?.confidence != null && <em>{(pred.confidence * 100).toFixed(1)}% top class prob.</em>}
+            </div>
+            {pred?.class_probabilities && (
+              <dl style={{ marginTop: "8px" }}>
+                {Object.entries(pred.class_probabilities)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 3)
+                  .map(([cls, prob]) => (
+                    <div key={cls}>
+                      <dt>Prob ({cls})</dt>
+                      <dd>{(prob * 100).toFixed(1)}%</dd>
+                    </div>
+                  ))}
+              </dl>
+            )}
+            <div className="explanation">
+              <span>Global GB feature importance & contract z-score</span>
+              {pred?.model_available && pred.top_feature_evidence.length > 0 ? (
+                <>
+                  <dl style={{ marginTop: "6px" }}>
+                    {pred.top_feature_evidence.slice(0, 5).map((ev) => (
+                      <div key={ev.feature}>
+                        <dt>{ev.feature} (val={ev.raw_value}, z={ev.z_score})</dt>
+                        <dd>imp={(ev.global_importance ?? ev.weight).toFixed(3)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {pred.explanation_note && (
+                    <p style={{ fontSize: "8px", marginTop: "6px" }}>{pred.explanation_note}</p>
+                  )}
+                </>
+              ) : (
+                <p>Model artifact {pred?.artifact_path || "phase5_model_gb_pruned155.joblib"} is missing or incompatible.</p>
+              )}
+            </div>
           </article>
         </div>
+
+        <div style={{ padding: "0 18px 12px" }}>
+          <div className="explanation">
+            <span>Explicit limitations & evaluation caveats (not proof of exploitability)</span>
+            {report?.limitations.map((lim, i) => (
+              <p key={i} style={{ marginTop: "4px" }}>• {lim}</p>
+            ))}
+          </div>
+        </div>
+
         <footer className="modal-footer">
-          <div className="risk-gauge"><div className="gauge"><span>0.89</span></div><div><span>Aggregated risk score</span><b>HIGH RISK</b><small>Fusion threshold exceeded by 0.21</small></div></div>
-          <div className="decision"><label className="override-toggle"><span>Manual override</span><input type="checkbox"/><i/></label><button className="btn danger block-action" onClick={close}><Icon name="lock" size={15} />BLOCK TRANSACTION</button></div>
+          <div className="risk-gauge">
+            <div className="gauge"><span>{pred?.confidence != null ? `${confPct}%` : `${pred?.feature_count ?? 155}d`}</span></div>
+            <div>
+              <span>Model & artifact status</span>
+              <b>{pred?.model_available ? `${pred.model_name || "StandardScaler+GB"} · ${pred.artifact_path}` : "STATIC ANALYSIS ONLY"}</b>
+              <small>Class probability ranking — not formal verification or clean/malicious certification</small>
+            </div>
+          </div>
+          <div className="decision">
+            <button className="btn secondary" onClick={close} type="button">Close analyzer</button>
+          </div>
         </footer>
       </section>
     </div>
