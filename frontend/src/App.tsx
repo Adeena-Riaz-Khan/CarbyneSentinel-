@@ -101,7 +101,7 @@ function Header({ page, setPage }: { page: Page; setPage: (page: Page) => void }
               onClick={() => setPage(item.id)}
               type="button"
             >
-              <Icon name={item.icon} size={16} /> {item.label}
+              <Icon name={item.icon} size={18} /> {item.label}
             </button>
           );
         })}
@@ -194,11 +194,11 @@ function Monitor({ openInspector }: { openInspector: () => void }) {
       <section className="monitor-hero">
         <div className="monitor-hero-copy">
           <div className="hero-status">
-            <span className="pulse-dot" /> TRI-SIGNAL PIPELINE LIVE <b>{stats?.avgLatencyMs ?? "—"}MS AVG</b>
+            <span className="pulse-dot" /> PIPELINE LIVE <b>{stats?.avgLatencyMs ?? "—"} MS AVG</b>
           </div>
           <div className="eyebrow">REAL-TIME THREAT OPERATIONS</div>
           <h1>Live Mempool <span>Monitor</span></h1>
-          <p>Sub-500ms transaction intelligence powered by fingerprinting, structural GCN analysis, and semantic auditing.</p>
+          <p>Bytecode fingerprinting, control-flow analysis, and vulnerability classification for pending transactions.</p>
           <Metrics />
         </div>
         <div className="monitor-art-stage">
@@ -209,10 +209,10 @@ function Monitor({ openInspector }: { openInspector: () => void }) {
         <div className="panel-header">
           <div>
             <div className="title-row">
-              <h2>Pending transaction feed</h2>
+              <h2>Pending Transaction Feed</h2>
               <span className="live-label"><i /> STREAMING</span>
             </div>
-            <p>Prioritized by aggregated threat confidence</p>
+            <p>Ranked by threat confidence for review and inspection</p>
           </div>
           <div className="feed-controls">
             <label className="search-box">
@@ -548,7 +548,7 @@ function Analytics() {
   const matrixClasses = ["m90", "m80", "m100"];
   return (
     <>
-      <PageHeading eyebrow="MODEL RESEARCH & VALIDATION" title="Benchmark Analytics" copy="Transparent performance across adversarial Web3 evaluation sets.">
+      <PageHeading eyebrow="MODEL RESEARCH & VALIDATION" title="Benchmark Analytics" copy="Validation metrics, classification quality, and pipeline latency for the CarbyneSentinel detector.">
         <button className="btn secondary"><Icon name="export" size={15} />Export report</button>
       </PageHeading>
       <div className="analytics-meta">
@@ -561,7 +561,7 @@ function Analytics() {
           <div className="chart-head">
             <div>
               <span>ADVERSARIAL ROBUSTNESS</span>
-              <h2>Obfuscation survival rate</h2>
+              <h2>Obfuscation Survival Rate</h2>
               <p>Detection accuracy after progressive bytecode manipulation</p>
             </div>
             <span className="chart-delta">+{benchmarks.deltaPp} pp</span>
@@ -582,7 +582,7 @@ function Analytics() {
           <div className="chart-head">
             <div>
               <span>CLASSIFICATION QUALITY</span>
-              <h2>DeFi intent matrix</h2>
+              <h2>DeFi Intent Matrix</h2>
               <p>1,000 labeled transactions</p>
             </div>
             <span className="micro-badge blue">{benchmarks.f1Pct}% F1</span>
@@ -608,7 +608,7 @@ function Analytics() {
           <div className="chart-head">
             <div>
               <span>PIPELINE PERFORMANCE</span>
-              <h2>Sub-500ms latency breakdown</h2>
+              <h2>Pipeline Latency Breakdown</h2>
               <p>Median stage latency across 10,000 pending transactions</p>
             </div>
             <div className="total-latency">
@@ -677,7 +677,7 @@ function Settings() {
   return (
     <>
       {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
-      <PageHeading eyebrow="SYSTEM CONFIGURATION" title="Settings" copy="Manage screening parameters, infrastructure, and incident retention.">
+      <PageHeading eyebrow="SYSTEM CONFIGURATION" title="Detection Settings" copy="Risk thresholds, model weights, and retention used by the screening pipeline.">
         <RequirePermission permission="settings:write" fallback={<span className="perm-hint">Read-only</span>}>
           <button
             className="btn primary"
@@ -711,7 +711,7 @@ function Settings() {
             <div className="settings-head">
               <span><Icon name="activity" /></span>
               <div>
-                <h2>Tri-signal fusion weights</h2>
+                <h2>Tri-Signal Fusion Weights</h2>
                 <p>Balance each model's contribution to the aggregate threat score.</p>
               </div>
             </div>
@@ -749,7 +749,7 @@ function Settings() {
             <div className="settings-head">
               <span><Icon name="activity" /></span>
               <div>
-                <h2>Pipeline performance</h2>
+                <h2>Pipeline Performance</h2>
                 <p>Set execution limits for pending transaction analysis.</p>
               </div>
             </div>
@@ -797,7 +797,7 @@ function Settings() {
             <div className="settings-head">
               <span><Icon name="alert" /></span>
               <div>
-                <h2>Webhook alerts</h2>
+                <h2>Webhook Alerts</h2>
                 <p>Forward critical detections to your incident response stack.</p>
               </div>
             </div>
@@ -837,7 +837,7 @@ function Settings() {
             <div className="settings-head">
               <span><Icon name="export" /></span>
               <div>
-                <h2>Incident export</h2>
+                <h2>Incident Export</h2>
                 <p>Download transaction diagnostics for audit and review.</p>
               </div>
             </div>
@@ -860,7 +860,7 @@ function Settings() {
           <div className="settings-head">
             <span><Icon name="activity" /></span>
             <div>
-              <h2>RPC connection strings</h2>
+              <h2>RPC Connection Strings</h2>
               <p>Primary and failover endpoints used for live mempool ingestion.</p>
             </div>
             <span className="status-badge"><i />3 HEALTHY</span>

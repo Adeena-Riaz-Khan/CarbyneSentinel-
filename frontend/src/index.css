@@ -168,7 +168,7 @@ body{background:radial-gradient(circle at 86% 8%,rgba(255,85,0,.2),transparent 2
   --bg:#070708;
   --panel:#12131a;
   --line:rgba(255,255,255,.08);
-  --muted:#8b909c;
+  --muted:#b8bfca;
   --text:#f4f5f7;
   --accent:#ff5c00;
   --accent-2:#ff7a24;
@@ -198,7 +198,8 @@ button:active{transform:translateY(1px)}
 .nav-item.active{color:#fff;font-weight:500}
 .nav-item.active:after{height:2.5px;border-radius:2px 2px 0 0;background:linear-gradient(90deg,#ff5c00,#ff8a3d);box-shadow:0 0 14px rgba(255,92,0,.75)}
 .node-status b,.user-chip b{font-size:12px;font-weight:500;color:#e8eaef}
-.node-status small,.user-chip small{font-size:11px;color:#6b7280;margin-top:2px}
+.node-status b,.user-chip b{font-size:14px;font-weight:600;color:#f3f4f6}
+.node-status small,.user-chip small{font-size:13px;color:#b4bcc8;margin-top:4px;font-weight:500}
 .avatar{width:36px;height:36px;border-radius:50%;font-size:11px;border:1px solid rgba(255,126,62,.35);box-shadow:0 0 0 3px rgba(255,92,0,.08)}
 .pulse-dot{width:8px;height:8px}
 
@@ -470,6 +471,288 @@ button:active{transform:translateY(1px)}
 .page-heading{gap:20px}
 .heading-actions .btn{white-space:nowrap}
 
+.topbar{height:80px;padding:0 32px}
+.brand{font-size:22px;gap:12px;letter-spacing:-.4px}
+.brand-mark{width:36px;height:36px}
+.nav-item{font-size:15px;gap:10px;padding:0 18px;font-weight:500}
+.nav-item.active{font-weight:700}
+.node-status b,.user-chip b{font-size:14px;font-weight:600;color:#f3f4f6}
+.node-status small,.user-chip small{font-size:13px;color:#b4bcc8;margin-top:4px;font-weight:500}
+.avatar{width:38px;height:38px;font-size:12px}
+.content{padding:36px 36px 56px;max-width:1600px}
 
-.error-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px;padding:12px 14px;border-radius:10px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;font-size:13px}.error-banner button{border:0;background:transparent;color:#fecaca;font-size:12px;text-decoration:underline}.field-error{display:block;margin-top:6px;font-size:12px;font-style:normal;color:#f87171}.perm-hint{font-size:11px;color:#8b909c;align-self:end}.empty-state strong{display:block;font-size:14px}.empty-state p{margin-top:6px;font-size:12px;color:#8b909c}
+.eyebrow{font-size:13px;letter-spacing:2px;margin-bottom:10px;font-weight:800}
+.page-heading{margin-bottom:28px;align-items:flex-end}
+.page-heading h1{font-size:clamp(34px,3.2vw,42px);letter-spacing:-1.2px;line-height:1.05;font-weight:800;color:#fff}
+.page-heading p{font-size:15px;line-height:1.55;margin-top:10px;max-width:720px;color:#9aa0ab}
+
+.monitor-hero{min-height:420px;margin-bottom:32px;gap:36px}
+.monitor-hero-copy>.eyebrow{font-size:13px;margin-top:14px}
+.monitor-hero-copy>h1{font-size:clamp(42px,4vw,58px);letter-spacing:-2.2px;line-height:1.02}
+.monitor-hero-copy>p{font-size:16px;line-height:1.65;max-width:680px;margin-top:16px;color:#a0a6b2}
+.hero-status{font-size:12px;padding:9px 14px}
+.monitor-hero .metrics-grid{margin-top:30px;gap:14px}
+.monitor-hero .metric-card{min-height:112px;padding:16px 18px}
+.monitor-hero .metric-top{font-size:12px}
+.monitor-hero .metric-value{font-size:30px;margin-top:14px}
+.monitor-hero .metric-value small{font-size:13px}
+.monitor-hero .metric-foot{font-size:12px}
+.monitor-hero .action-counts b{font-size:20px}
+.monitor-hero .action-counts small{font-size:12px}
+
+.feed-panel .panel-header{min-height:96px;padding:22px 24px}
+.feed-panel .title-row{gap:12px}
+.feed-panel .panel-header h2{font-size:22px;letter-spacing:-.4px}
+.feed-panel .panel-header p{font-size:14px;margin-top:8px;color:#8b919c}
+.live-label{font-size:12px}
+.btn{height:42px;padding:0 16px;font-size:13px;border-radius:10px;font-weight:700}
+.search-box{width:240px;height:42px}
+.search-box input{font-size:14px}
+.feed-controls select{height:42px;font-size:14px;min-width:150px}
+.table-wrap th{height:48px;font-size:12px;letter-spacing:.8px;padding:0 18px}
+.table-wrap td{padding:20px 18px;font-size:14px}
+.table-wrap td b{font-size:14px}
+.table-wrap td small{font-size:12px}
+.hash-link{font-size:14px}
+.score-cell{font-size:14px}
+.intent{font-size:13px;padding:7px 11px}
+.action-badge{font-size:12px;padding:7px 11px}
+.inspect-btn{font-size:13px;padding:9px 14px}
+.table-footer{height:52px;padding:0 24px;font-size:13px}
+
+.analytics-meta{height:48px;font-size:14px;padding:0 18px;margin-bottom:18px}
+.chart-card{padding:26px;min-height:380px}
+.chart-head>div>span{font-size:12px;letter-spacing:1.4px}
+.chart-head h2{font-size:22px;margin-top:8px;letter-spacing:-.4px;font-weight:700}
+.chart-head p{font-size:14px;margin-top:8px;color:#8b919c}
+.chart-delta{font-size:15px;padding:8px 12px}
+.bars span{font-size:13px}
+.bars i b{font-size:14px}
+.chart-note{font-size:14px;padding:14px 16px}
+.matrix i{font-size:14px}
+.matrix small,.matrix b{font-size:12px}
+.total-latency b{font-size:30px}
+.total-latency span,.total-latency small{font-size:12px}
+.hist-bar-wrap b{font-size:13px}
+.hist-column>span{font-size:13px}
+
+.settings-tabs{height:52px;margin-bottom:20px}
+.settings-tabs button{font-size:15px}
+.settings-card{padding:26px}
+.settings-head h2{font-size:18px}
+.settings-head p{font-size:14px}
+.range-field span b{font-size:14px}
+.range-field span small{font-size:13px}
+.range-field output{font-size:14px}
+.weight-total{font-size:14px}
+.switch-row span b{font-size:14px}
+.switch-row span small{font-size:13px}
+.form-field>span{font-size:13px}
+.form-field input,.form-field select{height:44px;font-size:14px}
+.export-box b{font-size:15px}
+.export-box div span{font-size:13px}
+
+.modal-head{padding:24px 26px}
+.modal-head h2{font-size:28px;letter-spacing:-.6px}
+.tx-meta code,.tx-meta span{font-size:13px;padding:6px 10px}
+.code-label{font-size:13px}
+.code-grid code,.code-grid pre{font-size:13px;line-height:1.6}
+.signal-title h3{font-size:16px}
+.signal-title p{font-size:13px}
+.signal-index{font-size:13px}
+.big-score span{font-size:13px}
+.big-score b{font-size:32px}
+.signal-card dl div{font-size:13px}
+.intent-box span{font-size:12px}
+.intent-box b{font-size:22px}
+.intent-box em{font-size:13px}
+.explanation span{font-size:12px}
+.explanation p{font-size:14px;line-height:1.65}
+.risk-gauge>div:last-child>span{font-size:12px}
+.risk-gauge>div:last-child b{font-size:16px}
+.risk-gauge>div:last-child small{font-size:12px}
+
+@media(max-width:760px){
+  .page-heading h1{font-size:30px}
+  .monitor-hero-copy>h1{font-size:36px}
+  .feed-panel .panel-header h2{font-size:18px}
+  .chart-head h2{font-size:18px}
+  .modal-head h2{font-size:22px}
+}
+
+.error-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px;padding:12px 14px;border-radius:10px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);color:#fca5a5;font-size:13px}.error-banner button{border:0;background:transparent;color:#fecaca;font-size:12px;text-decoration:underline}.field-error{display:block;margin-top:6px;font-size:12px;font-style:normal;color:#f87171}.perm-hint{font-size:13px;color:#b8bfca;align-self:end}.empty-state strong{display:block;font-size:15px}.empty-state p{margin-top:6px;font-size:14px;color:#b8bfca}
+
+/* Global secondary-text readability (all pages / screenshots) */
+:root{--muted:#b8bfca}
+.nav-item{color:#aeb6c2}
+.page-heading p,
+.panel-header p,
+.section-head p,
+.chart-head p,
+.settings-head p,
+.auth-card>p,
+.monitor-hero-copy>p,
+.feed-panel .panel-header p,
+.hero-banner p,
+.placeholder-panel p,
+.empty-state,
+.empty-state p,
+.metric-foot,
+.monitor-hero .metric-foot,
+.table-wrap td small,
+.table-footer,
+.analytics-meta,
+.range-field span small,
+.switch-row span small,
+.form-field>span,
+.export-box div span,
+.retention,
+.weight-total,
+.auth-proof small,
+.wallet-btn small,
+.terms,
+.perm-hint,
+.signal-title p,
+.explanation p,
+.model-meta,
+.risk-gauge>div:last-child>span,
+.risk-gauge>div:last-child small,
+.latency-pill,
+.code-label,
+.tx-meta span,
+.chart-note,
+.summary-card span,
+.summary-card small,
+.agent-card-head p,
+.alert-head p,
+.alert-copy p{
+  color:#b8bfca!important;
+}
+.page-heading p,
+.panel-header p,
+.chart-head p,
+.settings-head p,
+.feed-panel .panel-header p,
+.monitor-hero-copy>p,
+.auth-card>p,
+.explanation p,
+.chart-note{
+  font-size:15px!important;
+  line-height:1.55!important;
+}
+.metric-foot,
+.monitor-hero .metric-foot,
+.table-wrap td small,
+.range-field span small,
+.switch-row span small,
+.form-field>span,
+.export-box div span,
+.retention,
+.auth-proof small,
+.wallet-btn small,
+.signal-title p,
+.model-meta,
+.risk-gauge>div:last-child>span,
+.risk-gauge>div:last-child small,
+.summary-card span,
+.summary-card small,
+.agent-card-head p,
+.alert-head p,
+.alert-copy p,
+.table-footer,
+.analytics-meta,
+.latency-pill,
+.code-label,
+.tx-meta span{
+  font-size:13px!important;
+}
+.nav-item{font-size:15px}
+.settings-tabs button{color:#aeb6c2}
+.metric-top{color:#c4cad4!important;font-size:13px!important}
+.table-wrap th{color:#aeb6c2!important;font-size:12px!important}
+.bars span,
+.axis,
+.latency-scale,
+.latency-row,
+.matrix small,
+.matrix b,
+.horizontal-label,
+.vertical-label{
+  color:#aeb6c2!important;
+  font-size:13px!important;
+}
+.hist-column>span,
+.hist-column>span small,
+.total-latency span,
+.total-latency small{
+  color:#b8bfca!important;
+  font-size:13px!important;
+}
+.action-counts small{font-size:13px!important;color:#b8bfca!important}
+.search-box,.search-box input{color:#c4cad4;font-size:14px}
+.feed-controls select{color:#c4cad4;font-size:14px}
+.intent{color:#d5dae3}
+.inspect-btn{color:#d5dae3}
+.micro-badge{font-size:11px!important}
+.live-label{font-size:12px!important;color:#5ee0b5!important}
+
+/* Readable page captions — less stretched than Syne display */
+.page-heading h1,
+.monitor-hero-copy>h1,
+.auth-message h1,
+.auth-card h2,
+.panel-header h2,
+.feed-panel .panel-header h2,
+.chart-head h2,
+.settings-head h2,
+.modal-head h2,
+.section-head h2,
+.hero-banner h2,
+.placeholder-panel h2{
+  font-family:"Space Grotesk",Inter,sans-serif!important;
+  font-stretch:normal!important;
+  font-synthesis:none;
+  transform:none!important;
+}
+.page-heading h1{
+  font-size:clamp(30px,2.6vw,36px)!important;
+  letter-spacing:-.35px!important;
+  font-weight:700!important;
+  line-height:1.15!important;
+}
+.monitor-hero-copy>h1{
+  font-size:clamp(34px,3.2vw,46px)!important;
+  letter-spacing:-.4px!important;
+  font-weight:700!important;
+  line-height:1.12!important;
+}
+.auth-message h1{
+  font-size:clamp(36px,3.6vw,48px)!important;
+  letter-spacing:-.45px!important;
+  font-weight:700!important;
+  line-height:1.12!important;
+}
+.auth-card h2,
+.modal-head h2{
+  letter-spacing:-.3px!important;
+  font-weight:700!important;
+}
+.panel-header h2,
+.feed-panel .panel-header h2,
+.chart-head h2,
+.settings-head h2,
+.section-head h2,
+.hero-banner h2{
+  letter-spacing:-.2px!important;
+  font-weight:700!important;
+}
+.eyebrow{
+  letter-spacing:1.4px!important;
+  font-weight:700!important;
+}
+.brand{
+  font-family:"Space Grotesk",Inter,sans-serif!important;
+  letter-spacing:-.2px!important;
+  font-weight:700!important;
+}
 
