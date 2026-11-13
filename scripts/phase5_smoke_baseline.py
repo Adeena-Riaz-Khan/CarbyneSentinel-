@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import math
+import platform
 import re
+import statistics
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import joblib
 import numpy as np
+import sklearn
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     classification_report,
     confusion_matrix,
     f1_score,
+    matthews_corrcoef,
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -41,6 +50,9 @@ SPLITS_PATH = ROOT / "data" / "processed" / "phase4_splits.json"
 OUT_DIR = ROOT / "processed" / "results" / "phase5"
 CANONICAL_RESULT = "phase5_baseline_macro_f1.json"
 DEFAULT_MODEL_ARTIFACT = "phase5_model_gb_pruned155.joblib"
+EXTRA_METRICS_RESULT = "phase5_extra_metrics_gb_pruned155.json"
+FROZEN_GB_TEST_MACRO_F1 = 0.7542829234311563
+FROZEN_GB_TEST_ACCURACY = 0.74
 REDUNDANT_FEATURES = {
     "op_ratio_JUMP",
     "op_ratio_JUMPI",
@@ -268,25 +280,10 @@ def load_saved_model_bundle(model_path: Path) -> dict | None:
     return bundle
 
 
-def analyze_runtime_bytecode(
-    bytecode: str,
-    model_path: Path | None = None,
-    contract_id: str | None = None,
-    preloaded_bundle: dict | None = None,
-) -> dict:
+def extract_runtime_features(bytecode: str) -> dict:
     errors = validate_raw_bytecode(bytecode)
     if errors:
-        return {
-            "validation": {
-                "ok": False,
-                "errors": errors,
-            },
-            "contract_id": contract_id,
-            "limitations": [
-                "Input failed static EVM runtime bytecode validation; disassembly, CFG, and ML inference were not executed.",
-                "Contracts containing unlinked Solidity library placeholders (__$...$__ or __Lib__) cannot be executed or featurized until linked.",
-            ],
-        }
+        return {"ok": False, "errors": errors}
 
     data = parse_hex(bytecode)
     instructions = disassemble(bytecode)
@@ -333,6 +330,57 @@ def analyze_runtime_bytecode(
 
     has_truncated_push = bool(instructions[-1]["incomplete"])
     unknown_op_count = sum(1 for ins in instructions if ins["opcode"].startswith("UNKNOWN_"))
+
+    return {
+        "ok": True,
+        "errors": [],
+        "data_len": len(data),
+        "instructions": instructions,
+        "size": size,
+        "byte_entropy": byte_entropy,
+        "op_entropy": op_entropy,
+        "jumps": jumps,
+        "cfg_stats": cfg_stats,
+        "ratios": ratios,
+        "names": names,
+        "full_vector": full_vector,
+        "top_opcodes": top_opcodes,
+        "has_truncated_push": has_truncated_push,
+        "unknown_op_count": unknown_op_count,
+    }
+
+
+def analyze_runtime_bytecode(
+    bytecode: str,
+    model_path: Path | None = None,
+    contract_id: str | None = None,
+    preloaded_bundle: dict | None = None,
+) -> dict:
+    feat = extract_runtime_features(bytecode)
+    if not feat["ok"]:
+        return {
+            "validation": {
+                "ok": False,
+                "errors": feat["errors"],
+            },
+            "contract_id": contract_id,
+            "limitations": [
+                "Input failed static EVM runtime bytecode validation; disassembly, CFG, and ML inference were not executed.",
+                "Contracts containing unlinked Solidity library placeholders (__$...$__ or __Lib__) cannot be executed or featurized until linked.",
+            ],
+        }
+
+    instructions = feat["instructions"]
+    size = feat["size"]
+    byte_entropy = feat["byte_entropy"]
+    op_entropy = feat["op_entropy"]
+    jumps = feat["jumps"]
+    cfg_stats = feat["cfg_stats"]
+    names = feat["names"]
+    full_vector = feat["full_vector"]
+    top_opcodes = feat["top_opcodes"]
+    has_truncated_push = feat["has_truncated_push"]
+    unknown_op_count = feat["unknown_op_count"]
 
     resolved_model_path = model_path or (OUT_DIR / DEFAULT_MODEL_ARTIFACT)
     bundle = preloaded_bundle if preloaded_bundle is not None else load_saved_model_bundle(resolved_model_path)
@@ -443,6 +491,339 @@ def analyze_runtime_bytecode(
     }
 
 
+def _percentile(sorted_vals: list[float], p: float) -> float:
+    if not sorted_vals:
+        return float("nan")
+    if len(sorted_vals) == 1:
+        return float(sorted_vals[0])
+    k = (len(sorted_vals) - 1) * (p / 100.0)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return float(sorted_vals[int(k)])
+    return float(sorted_vals[f] * (c - k) + sorted_vals[c] * (k - f))
+
+
+def summarize_latencies_ms(samples_s: list[float]) -> dict:
+    ms = sorted(x * 1000.0 for x in samples_s)
+    return {
+        "n": len(ms),
+        "mean_ms": round(float(statistics.fmean(ms)), 4) if ms else None,
+        "p50_ms": round(_percentile(ms, 50), 4) if ms else None,
+        "p95_ms": round(_percentile(ms, 95), 4) if ms else None,
+        "min_ms": round(float(ms[0]), 4) if ms else None,
+        "max_ms": round(float(ms[-1]), 4) if ms else None,
+    }
+
+
+def resolve_bytecode_path(bp: str) -> Path | None:
+    if not bp:
+        return None
+    candidates = [ROOT / bp, ROOT / "processed" / bp]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
+def load_valid_test_bytecodes() -> list[dict]:
+    master = {r["contract_id"]: r for r in json.loads(MASTER_PATH.read_text(encoding="utf-8"))}
+    splits = json.loads(SPLITS_PATH.read_text(encoding="utf-8"))
+    rows = []
+    for cid in splits["splits"]["test"]:
+        row = master.get(cid)
+        if not row:
+            continue
+        path = resolve_bytecode_path(str(row.get("bytecode_path") or ""))
+        if path is None:
+            continue
+        raw = path.read_text(encoding="utf-8").strip()
+        if validate_raw_bytecode(raw):
+            continue
+        rows.append({"contract_id": cid, "bytecode": raw, "path": str(path.relative_to(ROOT)).replace("\\", "/")})
+    rows.sort(key=lambda r: r["contract_id"])
+    return rows
+
+
+def environment_block(model_path: Path, feature_count: int, feature_group: str) -> dict:
+    cpu = platform.processor() or platform.machine()
+    return {
+        "os": f"{platform.system()} {platform.release()}",
+        "python_version": platform.python_version(),
+        "sklearn_version": sklearn.__version__,
+        "numpy_version": np.__version__,
+        "cpu": cpu,
+        "model_artifact": model_path.name,
+        "feature_group": feature_group,
+        "feature_count": feature_count,
+        "timing_method": "time.perf_counter",
+        "execution": "sequential",
+    }
+
+
+def merge_extra_metrics_payload(out_path: Path, patch: dict) -> dict:
+    existing = {}
+    if out_path.is_file():
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = {}
+    existing.update(patch)
+    existing["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    return existing
+
+
+def run_extra_classification_metrics(model_path: Path, out_path: Path) -> dict:
+    bundle = load_saved_model_bundle(model_path)
+    if bundle is None:
+        raise SystemExit(f"missing or incompatible model artifact: {model_path}")
+    X, labels, _splits, _cids, feature_names, masks = load_split_arrays()
+    expected = list(bundle["feature_names"])
+    name_to_idx = {n: i for i, n in enumerate(feature_names)}
+    missing = [n for n in expected if n not in name_to_idx]
+    if missing:
+        raise SystemExit(f"matrix missing model features: {missing[:5]}")
+    feat_idx = [name_to_idx[n] for n in expected]
+    X_test = X[masks["test"]][:, feat_idx]
+    y_test = labels[masks["test"]]
+    pipe = bundle["pipeline"]
+    y_pred = pipe.predict(X_test)
+
+    macro_f1 = float(f1_score(y_test, y_pred, labels=NINE_CLASSES, average="macro", zero_division=0))
+    weighted_f1 = float(f1_score(y_test, y_pred, labels=NINE_CLASSES, average="weighted", zero_division=0))
+    acc = float(accuracy_score(y_test, y_pred))
+    bac = float(balanced_accuracy_score(y_test, y_pred))
+    mcc = float(matthews_corrcoef(y_test, y_pred))
+    report = classification_report(
+        y_test,
+        y_pred,
+        labels=NINE_CLASSES,
+        zero_division=0,
+        output_dict=True,
+    )
+    cm = confusion_matrix(y_test, y_pred, labels=NINE_CLASSES)
+
+    classification = {
+        "definitions": {
+            "accuracy": "Overall fraction of correct predictions on the locked test split.",
+            "macro_f1": "Unweighted mean of per-class F1; equal importance to all nine classes.",
+            "weighted_f1": "F1 averaged across classes weighted by class support on the test split.",
+            "balanced_accuracy": "Multiclass balanced accuracy = average recall across the nine classes.",
+            "mcc": "Multiclass Matthews correlation coefficient over the nine-class confusion matrix.",
+        },
+        "accuracy": acc,
+        "macro_f1": macro_f1,
+        "weighted_f1": weighted_f1,
+        "balanced_accuracy": bac,
+        "mcc": mcc,
+        "per_class": {
+            c: {
+                "precision": report[c]["precision"],
+                "recall": report[c]["recall"],
+                "f1": report[c]["f1-score"],
+                "support": report[c]["support"],
+            }
+            for c in NINE_CLASSES
+        },
+        "test_classification_report": report,
+        "test_confusion_matrix": cm.tolist(),
+        "test_confusion_matrix_labels": NINE_CLASSES,
+        "test_count": int(masks["test"].sum()),
+        "cross_check": {
+            "frozen_test_macro_f1": FROZEN_GB_TEST_MACRO_F1,
+            "frozen_test_accuracy": FROZEN_GB_TEST_ACCURACY,
+            "macro_f1_abs_delta": abs(macro_f1 - FROZEN_GB_TEST_MACRO_F1),
+            "accuracy_abs_delta": abs(acc - FROZEN_GB_TEST_ACCURACY),
+            "macro_f1_matches_frozen": abs(macro_f1 - FROZEN_GB_TEST_MACRO_F1) < 1e-6,
+            "accuracy_matches_frozen": abs(acc - FROZEN_GB_TEST_ACCURACY) < 1e-9,
+        },
+    }
+
+    payload = {
+        "model": bundle.get("model_name", "StandardScaler+GB"),
+        "estimator_type": type(pipe.named_steps["clf"]).__name__,
+        "feature_group": bundle.get("feature_group", "pruned155"),
+        "feature_count": len(expected),
+        "feature_names": expected,
+        "model_artifact": model_path.name,
+        "source_matrix": str(MATRIX_PATH.relative_to(ROOT)).replace("\\", "/"),
+        "evaluation_mode": "frozen_model_predict_on_locked_test_matrix_no_training",
+        "classification": classification,
+        "environment": environment_block(model_path, len(expected), bundle.get("feature_group", "pruned155")),
+        "limitations": {
+            "note": "Additional test metrics are for transparent reporting of the frozen GradientBoosting evaluation only; they were not used for model selection.",
+            "tx_origin_solidiFI_only": True,
+            "no_benign_class": True,
+            "solidifi_duplicate_pairs_cross_split": True,
+            "dynamic_jumps_may_remain_unresolved": True,
+        },
+    }
+    merge_extra_metrics_payload(out_path, payload)
+    return classification
+
+
+def run_runtime_benchmarks(model_path: Path, out_path: Path) -> dict:
+    bundle = load_saved_model_bundle(model_path)
+    if bundle is None:
+        raise SystemExit(f"missing or incompatible model artifact: {model_path}")
+    expected = list(bundle["feature_names"])
+    rows = load_valid_test_bytecodes()
+    if not rows:
+        raise SystemExit("no valid test-split bytecode files available for runtime benchmarks")
+
+    warm_up = 3
+    reps = 2
+    throughput_passes = 3
+
+    for i in range(min(warm_up, len(rows))):
+        extract_runtime_features(rows[i]["bytecode"])
+        analyze_runtime_bytecode(
+            rows[i]["bytecode"],
+            model_path=model_path,
+            contract_id=rows[i]["contract_id"],
+            preloaded_bundle=bundle,
+        )
+
+    feat_samples: list[float] = []
+    e2e_samples: list[float] = []
+    feature_dims: list[int] = []
+
+    for _ in range(reps):
+        for row in rows:
+            t0 = time.perf_counter()
+            feat = extract_runtime_features(row["bytecode"])
+            t1 = time.perf_counter()
+            if not feat["ok"]:
+                continue
+            feat_samples.append(t1 - t0)
+            idx_map = {n: i for i, n in enumerate(feat["names"])}
+            sub = [feat["full_vector"][idx_map[n]] for n in expected]
+            feature_dims.append(len(sub))
+
+            t2 = time.perf_counter()
+            report = analyze_runtime_bytecode(
+                row["bytecode"],
+                model_path=model_path,
+                contract_id=row["contract_id"],
+                preloaded_bundle=bundle,
+            )
+            t3 = time.perf_counter()
+            if report.get("validation", {}).get("ok"):
+                e2e_samples.append(t3 - t2)
+                fv = report.get("feature_vector") or {}
+                if fv.get("dimension") is not None:
+                    feature_dims.append(int(fv["dimension"]))
+
+    if any(d != len(expected) for d in feature_dims):
+        raise SystemExit("feature vector dimension mismatch during runtime benchmark")
+
+    t_tp0 = time.perf_counter()
+    processed = 0
+    for _ in range(throughput_passes):
+        for row in rows:
+            report = analyze_runtime_bytecode(
+                row["bytecode"],
+                model_path=model_path,
+                contract_id=row["contract_id"],
+                preloaded_bundle=bundle,
+            )
+            if report.get("validation", {}).get("ok"):
+                processed += 1
+    t_tp1 = time.perf_counter()
+    duration = t_tp1 - t_tp0
+    throughput = (processed / duration) if duration > 0 else 0.0
+
+    http_block = None
+    try:
+        probe = rows[0]["bytecode"]
+        body = json.dumps({"bytecode": probe, "contract_id": rows[0]["contract_id"]}).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8000/api/analyze",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                http_samples: list[float] = []
+                for row in rows[: min(20, len(rows))]:
+                    b = json.dumps({"bytecode": row["bytecode"], "contract_id": row["contract_id"]}).encode("utf-8")
+                    r = urllib.request.Request(
+                        "http://127.0.0.1:8000/api/analyze",
+                        data=b,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    ht0 = time.perf_counter()
+                    with urllib.request.urlopen(r, timeout=30) as hr:
+                        hr.read()
+                    ht1 = time.perf_counter()
+                    http_samples.append(ht1 - ht0)
+                http_block = {
+                    "scope": "HTTP request-response to local /api/analyze (separate from internal backend timing)",
+                    "n_inputs": len(http_samples),
+                    **summarize_latencies_ms(http_samples),
+                }
+    except (urllib.error.URLError, TimeoutError, OSError):
+        http_block = {
+            "scope": "HTTP request-response",
+            "available": False,
+            "note": "Local inference server at 127.0.0.1:8000 was not reachable; HTTP latency omitted.",
+        }
+
+    runtime = {
+        "feature_extraction": {
+            "scope": "validation + disassembly + CFG + fingerprint/opcode features + pruned155 vector ordering",
+            "excludes": "model prediction and HTTP",
+            "successful_inputs": len(rows),
+            "warmup_contracts": warm_up,
+            "measurement_repetitions": reps,
+            **summarize_latencies_ms(feat_samples),
+        },
+        "end_to_end_inference_internal": {
+            "scope": "full analyze_runtime_bytecode with preloaded GradientBoosting bundle (no per-call model disk reload)",
+            "measurement_type": "internal_backend_processing_time",
+            "successful_inputs": len(rows),
+            "warmup_contracts": warm_up,
+            "measurement_repetitions": reps,
+            **summarize_latencies_ms(e2e_samples),
+        },
+        "throughput": {
+            "scope": "sequential end-to-end analyze_runtime_bytecode with preloaded model",
+            "concurrent": False,
+            "workload_contracts": len(rows),
+            "passes": throughput_passes,
+            "contracts_processed": processed,
+            "duration_s": round(duration, 4),
+            "contracts_per_second": round(throughput, 4),
+            "excludes": "application startup and model loading time (bundle preloaded before timed loop)",
+        },
+        "http_inference": http_block,
+        "bytecode_workload": {
+            "source": "locked test split contracts with readable valid runtime bytecode files",
+            "n_valid": len(rows),
+            "contract_ids": [r["contract_id"] for r in rows],
+        },
+    }
+
+    payload = {
+        "runtime": runtime,
+        "environment": environment_block(
+            model_path,
+            len(expected),
+            bundle.get("feature_group", "pruned155"),
+        ),
+        "model_artifact": model_path.name,
+        "feature_group": bundle.get("feature_group", "pruned155"),
+        "feature_count": len(expected),
+        "evaluation_mode": "frozen_model_runtime_benchmark_no_training",
+    }
+    merge_extra_metrics_payload(out_path, payload)
+    return runtime
+
+
 def load_demo_examples() -> list[dict]:
     master = {r["contract_id"]: r for r in json.loads(MASTER_PATH.read_text(encoding="utf-8"))}
     splits = json.loads(SPLITS_PATH.read_text(encoding="utf-8"))
@@ -515,6 +896,29 @@ def load_demo_examples() -> list[dict]:
     return demos
 
 
+EXPORT_DIR = ROOT / "exports"
+
+
+def save_incident_export(req: dict) -> dict:
+    fmt = str(req.get("format") or "json").strip().lower()
+    if fmt not in {"json", "csv"}:
+        raise ValueError("format must be json or csv")
+    content = req.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("content must be a non-empty string")
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    filename = f"incidents_{stamp}.{fmt}"
+    path = EXPORT_DIR / filename
+    path.write_text(content, encoding="utf-8")
+    return {
+        "filename": filename,
+        "relative_path": str(path.relative_to(ROOT)).replace("\\", "/"),
+        "absolute_path": str(path),
+        "bytes": path.stat().st_size,
+    }
+
+
 def run_http_server(port: int, model_path: Path | None) -> int:
     demos = load_demo_examples()
     r_path = model_path or (OUT_DIR / DEFAULT_MODEL_ARTIFACT)
@@ -556,15 +960,28 @@ def run_http_server(port: int, model_path: Path | None) -> int:
             self._send_json(404, {"error": "not_found"})
 
         def do_POST(self) -> None:
-            if not self.path.startswith("/api/analyze"):
-                self._send_json(404, {"error": "not_found"})
-                return
             length = int(self.headers.get("Content-Length", "0"))
             raw_body = self.rfile.read(length).decode("utf-8", errors="replace")
             try:
                 req = json.loads(raw_body) if raw_body else {}
             except json.JSONDecodeError:
                 self._send_json(400, {"error": "invalid_json"})
+                return
+
+            if self.path.startswith("/api/export"):
+                try:
+                    saved = save_incident_export(req)
+                except ValueError as exc:
+                    self._send_json(400, {"ok": False, "error": str(exc)})
+                    return
+                except OSError as exc:
+                    self._send_json(500, {"ok": False, "error": f"write_failed: {exc}"})
+                    return
+                self._send_json(200, {"ok": True, **saved})
+                return
+
+            if not self.path.startswith("/api/analyze"):
+                self._send_json(404, {"error": "not_found"})
                 return
             bc = str(req.get("bytecode") or "")
             cid = req.get("contract_id")
@@ -675,11 +1092,55 @@ def main() -> int:
         default=8000,
         help="port for --serve HTTP inference server",
     )
+    parser.add_argument(
+        "--extra-metrics",
+        action="store_true",
+        help="compute BAC/weighted-F1/MCC from frozen model on locked test matrix (never trains)",
+    )
+    parser.add_argument(
+        "--bench-runtime",
+        action="store_true",
+        help="benchmark feature-extraction/e2e latency and sequential throughput (never trains)",
+    )
     args = parser.parse_args()
 
     model_bundle_path = OUT_DIR / Path(args.model_artifact).name
     if args.serve:
         return run_http_server(args.port, model_bundle_path)
+
+    if args.extra_metrics or args.bench_runtime:
+        out_name = Path(args.out).name if args.out else EXTRA_METRICS_RESULT
+        if out_name == CANONICAL_RESULT:
+            out_name = EXTRA_METRICS_RESULT
+        protected = {
+            CANONICAL_RESULT,
+            "phase5_test_gb_pruned155.json",
+            "phase5_test_rf_pruned155.json",
+            "phase5_val_gb_pruned155.json",
+            "phase5_val_rf_pruned155.json",
+        }
+        if out_name in protected:
+            raise SystemExit(f"refusing to overwrite historical result {out_name}")
+        out_path = OUT_DIR / out_name
+        if args.extra_metrics:
+            cls = run_extra_classification_metrics(model_bundle_path, out_path)
+            print("=== phase5 extra classification metrics (frozen GB, no training) ===")
+            print(f"accuracy={cls['accuracy']:.6f}")
+            print(f"macro_f1={cls['macro_f1']:.6f}")
+            print(f"weighted_f1={cls['weighted_f1']:.6f}")
+            print(f"balanced_accuracy={cls['balanced_accuracy']:.6f}")
+            print(f"mcc={cls['mcc']:.6f}")
+            print(f"cross_check={cls['cross_check']}")
+            print(f"wrote {out_path}")
+        if args.bench_runtime:
+            rt = run_runtime_benchmarks(model_bundle_path, out_path)
+            print("=== phase5 runtime benchmarks (frozen GB, no training) ===")
+            print(f"feature_extract={rt['feature_extraction']}")
+            print(f"e2e_internal={rt['end_to_end_inference_internal']}")
+            print(f"throughput={rt['throughput']}")
+            print(f"http={rt['http_inference']}")
+            print(f"wrote {out_path}")
+        return 0
 
     if args.infer_bytecode or args.infer_file:
         raw_bc = args.infer_bytecode

@@ -7,6 +7,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import type {
+  AnalysisRun,
   BenchmarkDoc,
   GlobalStats,
   SettingsDoc,
@@ -75,4 +76,17 @@ export async function fsPatchSettings(
   const next = { ...current, ...parsed.data };
   await setDoc(doc(db(), FS.settings.col, FS.settings.doc), next, { merge: true });
   return next;
+}
+
+export async function fsSaveAnalysisRun(run: AnalysisRun): Promise<AnalysisRun> {
+  const { id, ...body } = run;
+  await setDoc(doc(db(), FS.analysisRuns, id), body);
+  return run;
+}
+
+export async function fsListAnalysisRuns(): Promise<AnalysisRun[]> {
+  const snap = await getDocs(collection(db(), FS.analysisRuns));
+  const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AnalysisRun, "id">) }));
+  rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return rows;
 }

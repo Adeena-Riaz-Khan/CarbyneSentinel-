@@ -1,4 +1,5 @@
 import type {
+  AnalysisRun,
   BenchmarkDoc,
   BytecodeAnalysisReport,
   DemoExample,
@@ -24,6 +25,7 @@ type Memory = {
   transactions: Transaction[];
   settings: SettingsDoc;
   benchmarks: BenchmarkDoc;
+  analysisRuns: AnalysisRun[];
 };
 
 const memory: Memory = {
@@ -35,6 +37,7 @@ const memory: Memory = {
     latencyStages: seedBenchmark.latencyStages.map((s) => ({ ...s })),
     matrix: seedBenchmark.matrix.map((r) => [...r]),
   },
+  analysisRuns: [],
 };
 
 let networkDown = false;
@@ -53,6 +56,7 @@ export function __resetApiForTests() {
     latencyStages: seedBenchmark.latencyStages.map((s) => ({ ...s })),
     matrix: seedBenchmark.matrix.map((r) => [...r]),
   };
+  memory.analysisRuns = [];
 }
 
 function assertAuth() {
@@ -187,6 +191,7 @@ export async function analyzeBytecode(
   await gate(signal);
   assertAuth();
   requirePermission("mempool:read");
+  let report: BytecodeAnalysisReport | null = null;
   try {
     const res = await fetch(`${INFERENCE_API_BASE}/api/analyze`, {
       method: "POST",
@@ -195,21 +200,20 @@ export async function analyzeBytecode(
       signal,
     });
     if (res.ok) {
-      return (await res.json()) as BytecodeAnalysisReport;
+      report = (await res.json()) as BytecodeAnalysisReport;
     }
   } catch {
     const text = (bytecode || "").trim();
     if (!text || text === "0x" || text === "0X") {
-      return {
+      report = {
         contract_id: contractId,
         validation: { ok: false, errors: ["bytecode is empty"] },
         limitations: [
           "Local Python inference server (http://127.0.0.1:8000) is offline; validated input format locally.",
         ],
       };
-    }
-    if (text.includes("__")) {
-      return {
+    } else if (text.includes("__")) {
+      report = {
         contract_id: contractId,
         validation: {
           ok: false,
@@ -219,34 +223,269 @@ export async function analyzeBytecode(
           "Contracts containing unlinked Solidity library placeholders (__$...$__ or __Lib__) cannot be executed or featurized until linked.",
         ],
       };
+    } else {
+      const clean = text.startsWith("0x") || text.startsWith("0X") ? text.slice(2) : text;
+      if (clean.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(clean)) {
+        report = {
+          contract_id: contractId,
+          validation: {
+            ok: false,
+            errors: [clean.length % 2 !== 0 ? "bytecode hex length is odd" : "bytecode is not valid hex"],
+          },
+          limitations: [
+            "Input failed static EVM runtime bytecode validation; disassembly, CFG, and ML inference were not executed.",
+          ],
+        };
+      } else {
+        report = {
+          contract_id: contractId,
+          validation: {
+            ok: false,
+            errors: [
+              "Python inference backend (http://127.0.0.1:8000) is not running. Start: py -3.13 scripts/phase5_smoke_baseline.py --serve",
+            ],
+          },
+          limitations: [
+            "Start the unified Python inference backend to run full disassembly, CFG extraction, 159-d featurization, and model prediction.",
+          ],
+        };
+      }
     }
-    const clean = text.startsWith("0x") || text.startsWith("0X") ? text.slice(2) : text;
-    if (clean.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(clean)) {
-      return {
-        contract_id: contractId,
-        validation: {
-          ok: false,
-          errors: [clean.length % 2 !== 0 ? "bytecode hex length is odd" : "bytecode is not valid hex"],
-        },
-        limitations: [
-          "Input failed static EVM runtime bytecode validation; disassembly, CFG, and ML inference were not executed.",
-        ],
-      };
-    }
-    return {
-      contract_id: contractId,
-      validation: {
-        ok: false,
-        errors: [
-          "Python inference backend (http://127.0.0.1:8000) is not running. Start: py -3.13 scripts/phase5_smoke_baseline.py --serve",
-        ],
-      },
-      limitations: [
-        "Start the unified Python inference backend to run full disassembly, CFG extraction, 159-d featurization, and model prediction.",
-      ],
-    };
   }
-  throw new ApiError("UNAVAILABLE", "Inference request failed.", 503);
+  if (!report) {
+    throw new ApiError("UNAVAILABLE", "Inference request failed.", 503);
+  }
+  void persistAnalysisRun(bytecode, report);
+  return report;
+}
+
+export async function listAnalysisRuns(signal?: AbortSignal): Promise<AnalysisRun[]> {
+  await gate(signal);
+  assertAuth();
+  requirePermission("diagnostics:read");
+  if (isFirestoreDataEnabled()) return fs.fsListAnalysisRuns();
+  return memory.analysisRuns.map((r) => ({ ...r, topFeatures: r.topFeatures.map((f) => ({ ...f })) }));
+}
+
+export type IncidentExportResult = {
+  filename: string;
+  relativePath: string | null;
+  savedToRepo: boolean;
+};
+
+export async function downloadIncidentExport(
+  format: "csv" | "json",
+): Promise<IncidentExportResult> {
+  assertAuth();
+  requirePermission("analytics:export");
+  const [runs, txs] = await Promise.all([listAnalysisRuns(), getTransactions()]);
+  const content =
+    format === "json"
+      ? JSON.stringify(
+          {
+            exportedAt: new Date().toISOString(),
+            analysisRuns: runs,
+            mempoolTransactions: txs,
+          },
+          null,
+          2,
+        )
+      : runs.length > 0
+        ? analysisRunsToCsv(runs)
+        : transactionsToCsv(txs);
+  const mime = format === "json" ? "application/json" : "text/csv;charset=utf-8";
+  const saved = await saveExportToRepo(format, content);
+  const filename = saved?.filename ?? fallbackExportFilename(format);
+  triggerDownload(filename, content, mime);
+  return {
+    filename,
+    relativePath: saved?.relative_path ?? null,
+    savedToRepo: Boolean(saved?.relative_path),
+  };
+}
+
+function fallbackExportFilename(format: "csv" | "json"): string {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  return `incidents_${stamp}.${format}`;
+}
+
+async function saveExportToRepo(
+  format: "csv" | "json",
+  content: string,
+): Promise<{ filename: string; relative_path: string } | null> {
+  try {
+    const res = await fetch(`${INFERENCE_API_BASE}/api/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format, content }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      filename?: string;
+      relative_path?: string;
+    };
+    if (!data.ok || !data.filename || !data.relative_path) return null;
+    return { filename: data.filename, relative_path: data.relative_path };
+  } catch {
+    return null;
+  }
+}
+
+async function persistAnalysisRun(
+  bytecode: string,
+  report: BytecodeAnalysisReport,
+): Promise<void> {
+  try {
+    const session = getCurrentSession();
+    if (!session) return;
+    const run = await buildAnalysisRun(bytecode, report, session.user.id, session.user.email);
+    if (isFirestoreDataEnabled()) {
+      await fs.fsSaveAnalysisRun(run);
+      return;
+    }
+    memory.analysisRuns.unshift(run);
+    if (memory.analysisRuns.length > 500) memory.analysisRuns.length = 500;
+  } catch {
+    /* best-effort — never block inference UI */
+  }
+}
+
+async function buildAnalysisRun(
+  bytecode: string,
+  report: BytecodeAnalysisReport,
+  userId: string,
+  userEmail: string,
+): Promise<AnalysisRun> {
+  const text = (bytecode || "").trim();
+  const pred = report.prediction;
+  return {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    userId,
+    userEmail,
+    contractId: report.contract_id ?? null,
+    bytecodeSha256: await sha256Hex(text),
+    bytecodeSizeBytes: report.validation.bytecode_size_bytes ?? Math.ceil(text.replace(/^0x/i, "").length / 2),
+    validationOk: report.validation.ok,
+    validationErrors: report.validation.errors.slice(0, 8),
+    predictedClass: pred?.predicted_class ?? null,
+    confidence: pred?.confidence ?? null,
+    featureGroup: pred?.feature_group ?? null,
+    featureCount: pred?.feature_count ?? null,
+    estimatorType: pred?.estimator_type ?? null,
+    modelArtifact: pred?.artifact_path ?? null,
+    instructionCount: report.disassembly?.instruction_count ?? report.validation.instruction_count ?? null,
+    cfgBlockCount: report.cfg?.block_count ?? null,
+    cfgResolvedJumps: report.cfg?.resolved_jumps ?? null,
+    cfgUnresolvedJumps: report.cfg?.unresolved_jumps ?? null,
+    topFeatures: (pred?.top_feature_evidence ?? []).slice(0, 5).map((f) => ({
+      feature: f.feature,
+      contribution: f.contribution,
+      direction: f.direction,
+    })),
+    limitations: (report.limitations ?? []).slice(0, 6),
+  };
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text.toLowerCase());
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function csvEscape(value: string | number | boolean | null | undefined): string {
+  const s = value == null ? "" : String(value);
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function analysisRunsToCsv(runs: AnalysisRun[]): string {
+  const header = [
+    "id",
+    "createdAt",
+    "userEmail",
+    "contractId",
+    "bytecodeSha256",
+    "bytecodeSizeBytes",
+    "validationOk",
+    "predictedClass",
+    "confidence",
+    "featureGroup",
+    "featureCount",
+    "estimatorType",
+    "modelArtifact",
+    "instructionCount",
+    "cfgBlockCount",
+  ];
+  const lines = [header.join(",")];
+  for (const r of runs) {
+    lines.push(
+      [
+        r.id,
+        r.createdAt,
+        r.userEmail,
+        r.contractId,
+        r.bytecodeSha256,
+        r.bytecodeSizeBytes,
+        r.validationOk,
+        r.predictedClass,
+        r.confidence,
+        r.featureGroup,
+        r.featureCount,
+        r.estimatorType,
+        r.modelArtifact,
+        r.instructionCount,
+        r.cfgBlockCount,
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+}
+
+function transactionsToCsv(txs: Transaction[]): string {
+  const header = [
+    "id",
+    "hash",
+    "contractName",
+    "contractAddress",
+    "gasPrice",
+    "fingerprintScore",
+    "structuralScore",
+    "intent",
+    "action",
+  ];
+  const lines = [header.join(",")];
+  for (const t of txs) {
+    lines.push(
+      [
+        t.id,
+        t.hash,
+        t.contractName,
+        t.contractAddress,
+        t.gasPrice,
+        t.fingerprintScore,
+        t.structuralScore,
+        t.intent,
+        t.action,
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+}
+
+function triggerDownload(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function delay(ms: number) {

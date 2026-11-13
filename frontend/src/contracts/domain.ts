@@ -141,3 +141,27 @@ export type BytecodeAnalysisReport = {
   limitations: string[];
 };
 
+export type AnalysisRun = {
+  id: string;
+  createdAt: string;
+  userId: string;
+  userEmail: string;
+  contractId: string | null;
+  bytecodeSha256: string;
+  bytecodeSizeBytes: number;
+  validationOk: boolean;
+  validationErrors: string[];
+  predictedClass: string | null;
+  confidence: number | null;
+  featureGroup: string | null;
+  featureCount: number | null;
+  estimatorType: string | null;
+  modelArtifact: string | null;
+  instructionCount: number | null;
+  cfgBlockCount: number | null;
+  cfgResolvedJumps: number | null;
+  cfgUnresolvedJumps: number | null;
+  topFeatures: { feature: string; contribution: number; direction: string }[];
+  limitations: string[];
+};
+

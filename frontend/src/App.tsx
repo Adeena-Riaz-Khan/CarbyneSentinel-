@@ -13,7 +13,12 @@ import {
   scoreRiskBand,
 } from "./domain/calculations";
 import AuthPage from "./pages/AuthPage";
-import { analyzeBytecode, getDemoExamples } from "./services/apiClient";
+import {
+  analyzeBytecode,
+  downloadIncidentExport,
+  getDemoExamples,
+  listAnalysisRuns,
+} from "./services/apiClient";
 import { sanitizeSearchQuery } from "./validation/forms";
 
 type Page = "monitor" | "analytics" | "settings" | "auth";
@@ -648,6 +653,9 @@ function Settings() {
   const [tab, setTab] = useState("Pipeline parameters");
   const [saved, setSaved] = useState(false);
   const [weights, setWeights] = useState([25, 32, 43, 450]);
+  const [runCount, setRunCount] = useState(0);
+  const [exporting, setExporting] = useState<"csv" | "json" | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!settings) return;
@@ -658,6 +666,28 @@ function Settings() {
       settings.timeoutMs,
     ]);
   }, [settings]);
+
+  useEffect(() => {
+    void listAnalysisRuns()
+      .then((rows) => setRunCount(rows.length))
+      .catch(() => setRunCount(0));
+  }, [tab, saved]);
+
+  const runExport = (format: "csv" | "json") => {
+    if (!can("analytics:export")) return;
+    setExporting(format);
+    setExportNote(null);
+    void downloadIncidentExport(format)
+      .then((result) => {
+        setExportNote(
+          result.savedToRepo && result.relativePath
+            ? `Saved to ${result.relativePath}`
+            : `Downloaded ${result.filename} (start py --serve to also save under exports/)`,
+        );
+      })
+      .catch(() => setExportNote("Export failed."))
+      .finally(() => setExporting(null));
+  };
 
   if (!can("settings:read")) {
     return (
@@ -844,15 +874,38 @@ function Settings() {
             <div className="export-box">
               <div>
                 <b>Incident archive</b>
-                <span>{(settings.archiveRecords / 1e6).toFixed(1)}M records — Jan 1 — present</span>
+                <span>
+                  {runCount} analysis run{runCount === 1 ? "" : "s"} in Firestore
+                  {" · "}
+                  {(settings.archiveRecords / 1e6).toFixed(1)}M seeded archive capacity
+                </span>
               </div>
               <span className="micro-badge safe">{settings.archiveSizeMb} MB</span>
             </div>
             <div className="export-actions">
-              <button className="btn secondary"><Icon name="export" size={15} />Export CSV</button>
-              <button className="btn secondary"><Icon name="export" size={15} />Export JSON</button>
+              <RequirePermission permission="analytics:export" fallback={<span className="perm-hint">Export requires analytics:export</span>}>
+                <button
+                  className="btn secondary"
+                  type="button"
+                  disabled={exporting !== null}
+                  onClick={() => runExport("csv")}
+                >
+                  <Icon name="export" size={15} />
+                  {exporting === "csv" ? "Exporting…" : "Export CSV"}
+                </button>
+                <button
+                  className="btn secondary"
+                  type="button"
+                  disabled={exporting !== null}
+                  onClick={() => runExport("json")}
+                >
+                  <Icon name="export" size={15} />
+                  {exporting === "json" ? "Exporting…" : "Export JSON"}
+                </button>
+              </RequirePermission>
             </div>
-            <small className="retention"><Icon name="lock" size={13} />Reports are encrypted and retained for 365 days.</small>
+            <small className="retention"><Icon name="lock" size={13} />Exports save to exports/incidents_YYYY-MM-DD_HHMMSS.csv|json and also download in the browser.</small>
+            {exportNote ? <small className="retention" style={{ color: "#9fe7c7" }}>{exportNote}</small> : null}
           </section>
         </div>
       ) : tab === "RPC nodes" ? (
