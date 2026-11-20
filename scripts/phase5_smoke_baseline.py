@@ -51,8 +51,11 @@ OUT_DIR = ROOT / "processed" / "results" / "phase5"
 CANONICAL_RESULT = "phase5_baseline_macro_f1.json"
 DEFAULT_MODEL_ARTIFACT = "phase5_model_gb_pruned155.joblib"
 EXTRA_METRICS_RESULT = "phase5_extra_metrics_gb_pruned155.json"
+HISTORICAL_GB_TEST_RESULT = "phase5_test_gb_pruned155.json"
+OBFUSCATION_BENCH_JSONL = ROOT / "data" / "processed" / "obfuscation_benchmark.jsonl"
 FROZEN_GB_TEST_MACRO_F1 = 0.7542829234311563
 FROZEN_GB_TEST_ACCURACY = 0.74
+ZERO_DENOM_CONVENTION = "rate_equals_0_when_denominator_is_0"
 REDUNDANT_FEATURES = {
     "op_ratio_JUMP",
     "op_ratio_JUMPI",
@@ -573,6 +576,443 @@ def merge_extra_metrics_payload(out_path: Path, patch: dict) -> dict:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
     return existing
+
+
+def safe_rate(numerator: float, denominator: float) -> float:
+    if denominator == 0:
+        return 0.0
+    return float(numerator) / float(denominator)
+
+
+def ovr_per_class_from_confusion_matrix(cm: list[list[int]] | np.ndarray, labels: list[str]) -> dict:
+    arr = np.asarray(cm, dtype=float)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise SystemExit(f"confusion matrix must be square; got shape {arr.shape}")
+    if arr.shape[0] != len(labels):
+        raise SystemExit(f"label count {len(labels)} does not match cm size {arr.shape[0]}")
+    total = float(arr.sum())
+    per_class = {}
+    for i, name in enumerate(labels):
+        tp = float(arr[i, i])
+        fn = float(arr[i, :].sum() - tp)
+        fp = float(arr[:, i].sum() - tp)
+        tn = total - tp - fn - fp
+        precision = safe_rate(tp, tp + fp)
+        recall = safe_rate(tp, tp + fn)
+        fpr = safe_rate(fp, fp + tn)
+        fnr = safe_rate(fn, tp + fn)
+        f1 = safe_rate(2.0 * precision * recall, precision + recall)
+        support = tp + fn
+        per_class[name] = {
+            "tp": int(tp),
+            "fp": int(fp),
+            "tn": int(tn),
+            "fn": int(fn),
+            "precision": precision,
+            "recall": recall,
+            "tpr": recall,
+            "fpr": fpr,
+            "fnr": fnr,
+            "f1": f1,
+            "support": int(support),
+        }
+    rate_keys = ["precision", "recall", "tpr", "fpr", "fnr", "f1"]
+    macro = {k: float(np.mean([per_class[c][k] for c in labels])) for k in rate_keys}
+    return {
+        "per_class": per_class,
+        "macro_averages": macro,
+        "confusion_matrix_total": int(total),
+        "labels": list(labels),
+    }
+
+
+def run_saved_cm_per_class_metrics(out_path: Path) -> dict:
+    src = OUT_DIR / HISTORICAL_GB_TEST_RESULT
+    if not src.is_file():
+        raise SystemExit(f"missing historical GB test artifact: {src}")
+    hist = json.loads(src.read_text(encoding="utf-8"))
+    labels = list(hist.get("test_confusion_matrix_labels") or [])
+    cm = hist.get("test_confusion_matrix")
+    report = hist.get("test_classification_report") or {}
+    if labels != NINE_CLASSES:
+        raise SystemExit(
+            f"GB test label order mismatch: expected {NINE_CLASSES}, got {labels}"
+        )
+    if not isinstance(cm, list):
+        raise SystemExit("historical GB test artifact missing test_confusion_matrix")
+
+    derived = ovr_per_class_from_confusion_matrix(cm, labels)
+    per_class = derived["per_class"]
+
+    support_ok = True
+    row_checks = {}
+    for i, name in enumerate(labels):
+        row_sum = int(sum(cm[i]))
+        match = per_class[name]["support"] == row_sum
+        row_checks[name] = {"support": per_class[name]["support"], "row_sum": row_sum, "match": match}
+        if not match:
+            support_ok = False
+
+    cm_total = derived["confusion_matrix_total"]
+    total_ok = cm_total == 100
+
+    cross = {}
+    report_ok = True
+    for name in labels:
+        if name not in report:
+            report_ok = False
+            cross[name] = {"present_in_saved_report": False}
+            continue
+        saved_p = float(report[name]["precision"])
+        saved_r = float(report[name]["recall"])
+        saved_f = float(report[name]["f1-score"])
+        saved_s = float(report[name]["support"])
+        d = per_class[name]
+        item = {
+            "precision_abs_delta": abs(d["precision"] - saved_p),
+            "recall_abs_delta": abs(d["recall"] - saved_r),
+            "f1_abs_delta": abs(d["f1"] - saved_f),
+            "support_abs_delta": abs(float(d["support"]) - saved_s),
+            "precision_match": abs(d["precision"] - saved_p) < 1e-12,
+            "recall_match": abs(d["recall"] - saved_r) < 1e-12,
+            "f1_match": abs(d["f1"] - saved_f) < 1e-12,
+            "support_match": abs(float(d["support"]) - saved_s) < 1e-9,
+        }
+        if not all(
+            [
+                item["precision_match"],
+                item["recall_match"],
+                item["f1_match"],
+                item["support_match"],
+            ]
+        ):
+            report_ok = False
+        cross[name] = item
+
+    block = {
+        "source_artifact": HISTORICAL_GB_TEST_RESULT,
+        "model": hist.get("model", "StandardScaler+GB"),
+        "feature_group": hist.get("feature_group", "pruned155"),
+        "evaluation_mode": "derived_from_saved_gb_test_confusion_matrix_no_predict_no_training",
+        "scope": (
+            "One-vs-rest per-vulnerability-class rates on the nine seed classes. "
+            "Not benign-versus-malicious detection rates."
+        ),
+        "zero_denominator_convention": ZERO_DENOM_CONVENTION,
+        "definitions": {
+            "tp_fp_tn_fn": "One-vs-rest counts from the saved 9x9 confusion matrix.",
+            "precision": "TP / (TP + FP); 0 if denominator is 0.",
+            "recall_tpr": "TP / (TP + FN); 0 if denominator is 0.",
+            "fpr": "FP / (FP + TN); one-vs-rest per class; 0 if denominator is 0.",
+            "fnr": "FN / (TP + FN); one-vs-rest per class; 0 if denominator is 0.",
+            "f1": "2 * precision * recall / (precision + recall); 0 if denominator is 0.",
+            "support": "TP + FN (true-class row sum).",
+            "macro_averages": "Unweighted mean of per-class rate metrics only; counts are not averaged.",
+        },
+        "test_count": cm_total,
+        "test_confusion_matrix": cm,
+        "test_confusion_matrix_labels": labels,
+        "per_class": per_class,
+        "macro_averages": derived["macro_averages"],
+        "validation": {
+            "confusion_matrix_sums_to_100": total_ok,
+            "confusion_matrix_total": cm_total,
+            "support_matches_row_sum_for_all_classes": support_ok,
+            "per_class_support_vs_row_sum": row_checks,
+            "precision_recall_f1_match_saved_gb_report": report_ok,
+        },
+        "cross_check_vs_saved_gb_classification_report": cross,
+        "frozen_test_macro_f1": hist.get("test_macro_f1"),
+        "frozen_test_accuracy": hist.get("test_accuracy"),
+    }
+    if not total_ok or not support_ok or not report_ok:
+        raise SystemExit(
+            "saved-CM per-class validation failed: "
+            f"total_ok={total_ok} support_ok={support_ok} report_ok={report_ok}"
+        )
+
+    merge_extra_metrics_payload(
+        out_path,
+        {
+            "one_vs_rest_from_saved_confusion_matrix": block,
+            "cm_derived_note": (
+                "one_vs_rest_from_saved_confusion_matrix is computed from "
+                f"{HISTORICAL_GB_TEST_RESULT} only; no model load, fit, or predict."
+            ),
+        },
+    )
+    return block
+
+
+def run_paired_obfuscation_eval(model_path: Path, out_path: Path) -> dict:
+    from phase5_build_feature_matrix import extract_vector, feature_names as matrix_feature_names
+
+    bundle = load_saved_model_bundle(model_path)
+    if bundle is None:
+        raise SystemExit(f"missing or incompatible model artifact: {model_path}")
+    expected = list(bundle["feature_names"])
+    if len(expected) != 155:
+        raise SystemExit(f"expected pruned155 (155 features), got {len(expected)}")
+    pipe = bundle["pipeline"]
+    classes = []
+    if hasattr(pipe, "classes_"):
+        classes = [str(c) for c in pipe.classes_]
+    elif bundle.get("classes") is not None:
+        classes = [str(c) for c in bundle["classes"]]
+    elif hasattr(pipe, "named_steps"):
+        classes = [str(c) for c in pipe.named_steps["clf"].classes_]
+    if not classes:
+        raise SystemExit("frozen model classes unavailable")
+
+    splits = json.loads(SPLITS_PATH.read_text(encoding="utf-8"))
+    test_ids = set(splits["splits"]["test"])
+    X, labels, _spl, cids, feature_names, masks = load_split_arrays()
+    name_to_idx = {n: i for i, n in enumerate(feature_names)}
+    missing = [n for n in expected if n not in name_to_idx]
+    if missing:
+        raise SystemExit(f"matrix missing model features: {missing[:5]}")
+    feat_idx = [name_to_idx[n] for n in expected]
+    cid_to_row = {str(cids[i]): i for i in range(len(cids))}
+
+    if not OBFUSCATION_BENCH_JSONL.is_file():
+        raise SystemExit(f"missing obfuscation benchmark: {OBFUSCATION_BENCH_JSONL}")
+
+    by_parent: dict[str, list[dict]] = {}
+    for line in OBFUSCATION_BENCH_JSONL.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        parent = (row.get("parent_contract_id") or "").strip()
+        if parent not in test_ids:
+            continue
+        by_parent.setdefault(parent, []).append(row)
+
+    parent_ids = sorted(by_parent.keys())
+    if len(parent_ids) != 5:
+        raise SystemExit(f"expected 5 locked-test parents with children, got {len(parent_ids)}")
+    n_children = sum(len(v) for v in by_parent.values())
+    if n_children != 26:
+        raise SystemExit(f"expected 26 test-family children, got {n_children}")
+
+    parent_preds = {}
+    for pid in parent_ids:
+        if pid not in cid_to_row:
+            raise SystemExit(f"parent missing from feature matrix: {pid}")
+        idx = cid_to_row[pid]
+        if str(_spl[idx]) != "test":
+            raise SystemExit(f"parent not in featurized test split: {pid}")
+        vec = X[idx, feat_idx].reshape(1, -1)
+        pred = str(pipe.predict(vec)[0])
+        lab = str(labels[idx])
+        proba = None
+        if hasattr(pipe, "predict_proba"):
+            probs = pipe.predict_proba(vec)[0]
+            proba = {str(c): float(p) for c, p in zip(classes, probs)}
+        parent_preds[pid] = {
+            "label": lab,
+            "prediction": pred,
+            "correct": pred == lab,
+            "probabilities": proba,
+        }
+
+    variant_rows = []
+    exclusions = []
+    for pid in parent_ids:
+        pinfo = parent_preds[pid]
+        for child in by_parent[pid]:
+            cid = child.get("contract_id")
+            child_label = child.get("primary_vulnerability_type")
+            if not cid or not child_label:
+                exclusions.append(
+                    {
+                        "contract_id": cid,
+                        "parent_contract_id": pid,
+                        "reason": "missing_id_or_label",
+                    }
+                )
+                continue
+            if child_label != pinfo["label"]:
+                exclusions.append(
+                    {
+                        "contract_id": cid,
+                        "parent_contract_id": pid,
+                        "reason": "label_mismatch_vs_parent",
+                        "child_label": child_label,
+                        "parent_label": pinfo["label"],
+                    }
+                )
+                continue
+            try:
+                full_vec, _meta = extract_vector(child)
+            except Exception as exc:
+                exclusions.append(
+                    {
+                        "contract_id": cid,
+                        "parent_contract_id": pid,
+                        "reason": f"feature_extraction_failed: {exc}",
+                    }
+                )
+                continue
+            name_to_val = dict(zip(matrix_feature_names(), full_vec))
+            sub = [float(name_to_val[n]) for n in expected]
+            x = np.asarray(sub, dtype=float).reshape(1, -1)
+            child_pred = str(pipe.predict(x)[0])
+            child_proba = None
+            if hasattr(pipe, "predict_proba"):
+                probs = pipe.predict_proba(x)[0]
+                child_proba = {str(c): float(p) for c, p in zip(classes, probs)}
+            agree = child_pred == pinfo["prediction"]
+            retain = child_pred == child_label
+            conf = None
+            if pinfo["probabilities"] and child_proba:
+                conf = {
+                    "parent_prob_true_label": pinfo["probabilities"].get(pinfo["label"]),
+                    "child_prob_true_label": child_proba.get(child_label),
+                    "true_label_prob_delta_child_minus_parent": (
+                        child_proba.get(child_label, 0.0)
+                        - pinfo["probabilities"].get(pinfo["label"], 0.0)
+                    ),
+                    "parent_prob_parent_prediction": pinfo["probabilities"].get(
+                        pinfo["prediction"]
+                    ),
+                    "child_prob_child_prediction": child_proba.get(child_pred),
+                }
+            variant_rows.append(
+                {
+                    "contract_id": cid,
+                    "parent_contract_id": pid,
+                    "label": child_label,
+                    "parent_prediction": pinfo["prediction"],
+                    "child_prediction": child_pred,
+                    "parent_correct": pinfo["correct"],
+                    "child_correct": retain,
+                    "prediction_agreement": agree,
+                    "label_retention": retain,
+                    "prediction_changed": child_pred != pinfo["prediction"],
+                    "obfuscation_severity": child.get("obfuscation_severity"),
+                    "transformation_techniques": child.get("transformation_techniques"),
+                    "confidence": conf,
+                }
+            )
+
+    if exclusions:
+        raise SystemExit(f"paired obfuscation exclusions unexpected: {exclusions}")
+
+    def rate(rows: list[dict], key: str) -> float:
+        if not rows:
+            return 0.0
+        return float(sum(1 for r in rows if r[key]) / len(rows))
+
+    per_parent = []
+    for pid in parent_ids:
+        rows = [r for r in variant_rows if r["parent_contract_id"] == pid]
+        pinfo = parent_preds[pid]
+        deltas = [
+            r["confidence"]["true_label_prob_delta_child_minus_parent"]
+            for r in rows
+            if r.get("confidence") and r["confidence"].get("true_label_prob_delta_child_minus_parent") is not None
+        ]
+        per_parent.append(
+            {
+                "parent_contract_id": pid,
+                "label": pinfo["label"],
+                "parent_prediction": pinfo["prediction"],
+                "parent_correct": pinfo["correct"],
+                "n_variants": len(rows),
+                "child_correct_rate": rate(rows, "child_correct"),
+                "prediction_agreement_rate": rate(rows, "prediction_agreement"),
+                "label_retention_rate": rate(rows, "label_retention"),
+                "prediction_change_rate": rate(rows, "prediction_changed"),
+                "mean_true_label_prob_delta_child_minus_parent": (
+                    float(sum(deltas) / len(deltas)) if deltas else None
+                ),
+            }
+        )
+
+    variant_level = {
+        "n_variants": len(variant_rows),
+        "aggregation": "unweighted mean across all child variants",
+        "parent_correct_rate_among_variants": rate(variant_rows, "parent_correct"),
+        "child_correct_rate": rate(variant_rows, "child_correct"),
+        "prediction_agreement_rate": rate(variant_rows, "prediction_agreement"),
+        "label_retention_rate": rate(variant_rows, "label_retention"),
+        "prediction_change_rate": rate(variant_rows, "prediction_changed"),
+    }
+    parent_level = {
+        "n_parents": len(per_parent),
+        "aggregation": (
+            "unweighted mean of per-parent rates so the parent with many variants "
+            "does not dominate"
+        ),
+        "parent_correct_rate": float(
+            sum(1 for p in per_parent if p["parent_correct"]) / len(per_parent)
+        ),
+        "mean_child_correct_rate": float(
+            sum(p["child_correct_rate"] for p in per_parent) / len(per_parent)
+        ),
+        "mean_prediction_agreement_rate": float(
+            sum(p["prediction_agreement_rate"] for p in per_parent) / len(per_parent)
+        ),
+        "mean_label_retention_rate": float(
+            sum(p["label_retention_rate"] for p in per_parent) / len(per_parent)
+        ),
+        "mean_prediction_change_rate": float(
+            sum(p["prediction_change_rate"] for p in per_parent) / len(per_parent)
+        ),
+    }
+
+    block = {
+        "experiment": "obfprobe_inspired_paired_obfuscation_robustness",
+        "not_obfprobe_f1_f7": True,
+        "evaluation_mode": "frozen_gb_predict_on_test_parents_and_extracted_children_no_training",
+        "model_artifact": model_path.name,
+        "feature_group": bundle.get("feature_group", "pruned155"),
+        "feature_count": len(expected),
+        "feature_names": expected,
+        "source_obfuscation_benchmark": str(
+            OBFUSCATION_BENCH_JSONL.relative_to(ROOT)
+        ).replace("\\", "/"),
+        "locked_split": str(SPLITS_PATH.relative_to(ROOT)).replace("\\", "/"),
+        "definitions": {
+            "parent_correct": "Parent frozen-model prediction equals parent ground-truth label.",
+            "child_correct": "Child frozen-model prediction equals child ground-truth label.",
+            "prediction_agreement": "Child prediction equals parent prediction.",
+            "label_retention": "Child prediction equals the known vulnerability label.",
+            "prediction_changed": "Child prediction differs from parent prediction.",
+            "confidence": (
+                "Class probabilities from frozen GradientBoosting predict_proba; "
+                "true_label_prob_delta_child_minus_parent is child minus parent "
+                "probability on the known label."
+            ),
+        },
+        "cohort": {
+            "n_locked_test_parents_with_children": len(parent_ids),
+            "n_children": len(variant_rows),
+            "n_feature_extraction_failures": 0,
+            "n_exclusions": 0,
+            "skew_note": (
+                f"{max(len(by_parent[p]) for p in parent_ids)} of {len(variant_rows)} "
+                "variants belong to a single parent"
+            ),
+            "parents": parent_ids,
+        },
+        "parent_predictions": parent_preds,
+        "per_parent": per_parent,
+        "variant_level": variant_level,
+        "parent_level": parent_level,
+        "variants": variant_rows,
+        "limitations": {
+            "not_semantics_preserving_proof": True,
+            "exploit_verified_is_compile_and_marker_based": True,
+            "no_differential_execution_or_fork_replay": True,
+            "small_parent_sample": True,
+            "heavily_skewed_variant_counts": True,
+            "does_not_implement_obfprobe_f1_f7": True,
+            "not_general_robustness_claim": True,
+        },
+    }
+    merge_extra_metrics_payload(out_path, {"paired_obfuscation_robustness": block})
+    return block
 
 
 def run_extra_classification_metrics(model_path: Path, out_path: Path) -> dict:
@@ -1098,9 +1538,25 @@ def main() -> int:
         help="compute BAC/weighted-F1/MCC from frozen model on locked test matrix (never trains)",
     )
     parser.add_argument(
+        "--cm-class-metrics",
+        action="store_true",
+        help=(
+            "derive per-class TP/FP/TN/FN and one-vs-rest precision/recall/FPR/FNR/F1 "
+            f"from saved {HISTORICAL_GB_TEST_RESULT} only (no model load, no predict, never trains)"
+        ),
+    )
+    parser.add_argument(
         "--bench-runtime",
         action="store_true",
         help="benchmark feature-extraction/e2e latency and sequential throughput (never trains)",
+    )
+    parser.add_argument(
+        "--paired-obfuscation",
+        action="store_true",
+        help=(
+            "OBFPROBE-inspired paired obfuscation robustness on locked-test parents "
+            "and their children using frozen GB only (never trains)"
+        ),
     )
     args = parser.parse_args()
 
@@ -1108,7 +1564,7 @@ def main() -> int:
     if args.serve:
         return run_http_server(args.port, model_bundle_path)
 
-    if args.extra_metrics or args.bench_runtime:
+    if args.extra_metrics or args.bench_runtime or args.cm_class_metrics or args.paired_obfuscation:
         out_name = Path(args.out).name if args.out else EXTRA_METRICS_RESULT
         if out_name == CANONICAL_RESULT:
             out_name = EXTRA_METRICS_RESULT
@@ -1122,6 +1578,38 @@ def main() -> int:
         if out_name in protected:
             raise SystemExit(f"refusing to overwrite historical result {out_name}")
         out_path = OUT_DIR / out_name
+        if args.paired_obfuscation:
+            paired = run_paired_obfuscation_eval(model_bundle_path, out_path)
+            print("=== paired obfuscation robustness (frozen GB; no training) ===")
+            print(f"parents={paired['cohort']['n_locked_test_parents_with_children']}")
+            print(f"children={paired['cohort']['n_children']}")
+            print(f"variant_level={paired['variant_level']}")
+            print(f"parent_level={paired['parent_level']}")
+            for row in paired["per_parent"]:
+                print(
+                    f"{row['parent_contract_id']}: n={row['n_variants']} "
+                    f"parent_ok={row['parent_correct']} "
+                    f"retain={row['label_retention_rate']:.3f} "
+                    f"agree={row['prediction_agreement_rate']:.3f} "
+                    f"change={row['prediction_change_rate']:.3f}"
+                )
+            print(f"wrote {out_path}")
+        if args.cm_class_metrics or args.extra_metrics:
+            cm_block = run_saved_cm_per_class_metrics(out_path)
+            print("=== phase5 one-vs-rest class metrics (saved GB CM only; no predict) ===")
+            print(f"source={cm_block['source_artifact']}")
+            print(f"test_count={cm_block['test_count']}")
+            print(f"validation={cm_block['validation']}")
+            print(f"macro_averages={cm_block['macro_averages']}")
+            for name in cm_block["test_confusion_matrix_labels"]:
+                row = cm_block["per_class"][name]
+                print(
+                    f"{name}: tp={row['tp']} fp={row['fp']} tn={row['tn']} fn={row['fn']} "
+                    f"P={row['precision']:.6f} R={row['recall']:.6f} "
+                    f"FPR={row['fpr']:.6f} FNR={row['fnr']:.6f} F1={row['f1']:.6f} "
+                    f"support={row['support']}"
+                )
+            print(f"wrote {out_path}")
         if args.extra_metrics:
             cls = run_extra_classification_metrics(model_bundle_path, out_path)
             print("=== phase5 extra classification metrics (frozen GB, no training) ===")
