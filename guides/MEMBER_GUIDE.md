@@ -1,9 +1,9 @@
-# Member guide — pick up from Phase 5
+# Member guide — pick up from Phase 5 + intake
 
 Repo overview: [`README.md`](../README.md).  
-Read this in order: **schema → master → locked split → features → baseline**.
+Read this in order: **schema → master → locked split → features → baseline → intake**.
 
-FYP-1 stopped after a working **159-D feature matrix** and a **smoke logistic regression** on the locked family split (~**0.691** test macro F1). Your job is to stay on that lock and build the next models — not to rebuild the dataset from scratch unless the lead asks.
+FYP-1 stopped after a working **159-D feature matrix** and a **smoke logistic regression** on the locked family split (~**0.691** test macro F1). Live **Sepolia intake C1–C9** now lives under `intake/` (in git). Your job is to stay on the Phase 4/5 lock for ML work, and treat intake as the mempool → bytecode analysis path — not to rebuild the dataset from scratch unless the lead asks.
 
 ## 0. What you need on disk
 
@@ -104,7 +104,43 @@ python scripts/phase5_smoke_baseline.py
 
 Needs: `numpy`, `scikit-learn`, and the usual compile helpers if you recover bytecode (`py-solc-x`, etc.).
 
-## 7. Frontend
+## 7. Intake — Sepolia mempool path (`intake/`)
+
+Separate from the Phase 5 GB feature stack. **Do not edit `scripts/features/`** when changing intake disasm/CFG; intake has its own `intake/disasm.py` and `intake/cfg.py` so Phase 5 stays stable.
+
+| Step | Module | Role |
+|------|--------|------|
+| C1 | `sepolia_pending_listener.py` | Pending tx subscription (WebSocket) |
+| C2 | `tx_lifecycle.py` | Pending → confirmed / replaced / dropped + orchestration |
+| C3 | `tx_intake_gate.py` + `counting_bloom.py` | Dedup / admit gate |
+| C4 | `tx_queue.py` | Bounded queue + consumer handoff |
+| C5 | `bytecode_retrieval.py` | `eth_getCode` (soft-fail statuses) |
+| C6 | `bytecode_cache.py` | LRU cache; short TTL on `latest`; block-specific keys |
+| C7 | `proxy_detection.py` | EIP-1167 / 1967 / 1822 indicators from bytecode |
+| C8 | `selector_extraction.py` | Likely 4-byte selectors (not ABI names; bare PUSH4 ignored) |
+| C9 | `cfg.py` (+ `disasm.py`) | Basic blocks + jump resolution; unresolved jumps keep a reason |
+
+After a successful bytecode retrieve, lifecycle **disassembles once** and attaches `proxy`, `cfg`, and `selectors` on the record.
+
+### Config (local only)
+
+Copy `intake/.env.example` → `intake/.env` and set:
+
+- `SEPOLIA_WS_URL` — WebSocket RPC  
+- `SEPOLIA_HTTP_URL` — HTTP RPC (or derivable from WS)
+
+Never commit `.env`. Dependency: `websockets` (`intake/requirements.txt`).
+
+### Tests
+
+```text
+cd intake
+python -m unittest test_disasm test_cfg test_selector_extraction test_proxy_detection test_bytecode_cache test_bytecode_retrieval test_tx_lifecycle test_sepolia_pending_listener test_tx_intake_gate test_tx_queue -v
+```
+
+Live Sepolia smokes are optional and use your own RPC; unit/integration tests are the default gate.
+
+## 8. Frontend
 
 ```text
 cd frontend
@@ -114,12 +150,13 @@ npm run dev
 
 Seeded demo UI only — not live scoring.
 
-## 8. What to work on next
+## 9. What to work on next
 
 1. Train stronger models on the **same** locked featurized rows / CFGs (GCN first).  
 2. Do not change Phase 4 family membership without an explicit team decision.  
 3. Optional data hygiene: more bytecode recovery for excluded locked ids.  
-4. Keep heavy outputs under `processed/` / `data/` / `reports/` — they stay out of git.
+4. Keep heavy outputs under `processed/` / `data/` / `reports/` — they stay out of git.  
+5. Intake follow-ups only with team OK (e.g. RPC storage reads for proxy implementation code).
 
 ## Raw sources
 
@@ -127,5 +164,5 @@ Seeded demo UI only — not live scoring.
 
 ## Do not commit
 
-Heavy data, docs/report LaTeX, PDFs, internal notes, `.cursor/`.  
+Heavy data, docs/report LaTeX, PDFs, internal notes, `.cursor/`, `intake/.env`.  
 Ship code + schema + this guide; share datasets offline.
